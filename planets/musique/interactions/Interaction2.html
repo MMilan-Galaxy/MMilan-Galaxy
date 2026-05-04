@@ -1,0 +1,458 @@
+<!Doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Design System - Astro-Hub</title>
+
+    <!-- Importation des polices depuis Google Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Montserrat:wght@900&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* ==========================================
+           1. VARIABLES GLOBALES (Le cœur du système)
+           ========================================== */
+      :root {
+        /* Couleurs Globales */
+        --bg-space: #0a0a1a;
+        --surface: #14142d;
+        --text-main: #ffffff;
+        --text-sec: #a1a1b5;
+
+        /* Couleurs d'Accentuation (Planètes) */
+        --accent-hub: #00ffcc; /* Cyan Néon */
+        --accent-symphonia: #f72585; /* Rose Fluo */
+        --accent-planet2: #ff9f1c; /* Orange Solaire */
+        --accent-planet3: #2ec4b6; /* Vert Menthe */
+
+        /* Divers */
+        --gauge-bg: #33334a;
+        --font-title: "Montserrat", sans-serif;
+        --font-ui: "Inter", sans-serif;
+      }
+
+      /* ==========================================
+           2. RESET & LAYOUT DE BASE
+           ========================================== */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        cursor: none; /* Cache le curseur par défaut pour afficher le nôtre */
+      }
+
+      body {
+        background-color: var(--bg-space);
+        color: var(--text-main);
+        font-family: var(--font-ui);
+        padding: 40px;
+        overflow-x: hidden;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 60px;
+        background-color: rgba(20, 20, 45, 0.4);
+        padding: 40px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      /* ==========================================
+           3. TYPOGRAPHIE
+           ========================================== */
+      h1,
+      h2,
+      h3 {
+        font-family: var(--font-title);
+        text-transform: uppercase;
+        letter-spacing: 4px;
+      }
+
+      h1 {
+        font-size: 48px;
+        margin-bottom: 20px;
+        color: var(--accent-hub);
+      }
+      h2 {
+        font-size: 28px;
+        margin-bottom: 30px;
+        border-bottom: 2px solid var(--surface);
+        padding-bottom: 10px;
+      }
+
+      .text-ui {
+        font-family: var(--font-ui);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: var(--text-sec);
+      }
+
+      .text-body {
+        font-family: var(--font-ui);
+        font-weight: 400;
+        font-size: 24px; /* Grand pour l'exposition */
+        line-height: 1.5;
+      }
+
+      /* ==========================================
+           4. PALETTE DE COULEURS (Affichage)
+           ========================================== */
+      .color-grid {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+
+      .color-card {
+        background-color: var(--surface);
+        padding: 20px;
+        border-radius: 12px;
+        width: 200px;
+      }
+
+      .color-swatch {
+        width: 100%;
+        height: 100px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+      }
+
+      /* ==========================================
+           5. COMPOSANTS UI
+           ========================================== */
+
+      /* Boutons */
+      .btn-container {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        font-family: var(--font-ui);
+        font-weight: 700;
+        font-size: 16px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        padding: 16px 32px;
+        border-radius: 50px;
+        background: transparent;
+        color: var(--text-main);
+        transition: all 0.3s ease;
+      }
+
+      /* Thème Hub */
+      .btn-hub {
+        border: 2px solid var(--accent-hub);
+      }
+      .btn-hub:hover {
+        background: var(--accent-hub);
+        color: var(--bg-space);
+        box-shadow: 0 0 20px var(--accent-hub);
+      }
+
+      /* Thème Symphonia */
+      .btn-symphonia {
+        border: 2px solid var(--accent-symphonia);
+      }
+      .btn-symphonia:hover {
+        background: var(--accent-symphonia);
+        color: var(--text-main);
+        box-shadow: 0 0 20px var(--accent-symphonia);
+      }
+
+      /* Thème Planète 2 */
+      .btn-planet2 {
+        border: 2px solid var(--accent-planet2);
+      }
+      .btn-planet2:hover {
+        background: var(--accent-planet2);
+        color: var(--bg-space);
+        box-shadow: 0 0 20px var(--accent-planet2);
+      }
+
+      /* Boîte de Dialogue (PNJ) */
+      .dialog-box {
+        background: rgba(20, 20, 45, 0.8);
+        backdrop-filter: blur(10px);
+        border-top: 3px solid var(--accent-symphonia);
+        border-radius: 8px;
+        padding: 30px;
+        position: relative;
+        max-width: 800px;
+      }
+
+      .dialog-badge {
+        position: absolute;
+        top: -15px;
+        left: 30px;
+        background: var(--accent-symphonia);
+        color: var(--text-main);
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        font-size: 14px;
+        text-transform: uppercase;
+      }
+
+      /* Jauges de progression */
+      .gauge-container {
+        margin-bottom: 20px;
+        max-width: 500px;
+      }
+      .gauge-label {
+        margin-bottom: 8px;
+        display: block;
+      }
+      .gauge-bg {
+        background: var(--gauge-bg);
+        height: 16px;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .gauge-fill {
+        height: 100%;
+        border-radius: 10px;
+        transition: width 0.5s ease;
+      }
+
+      /* ==========================================
+           6. CURSEUR SPATIAL
+           ========================================== */
+      #custom-cursor {
+        position: fixed;
+        top: 0;
+        left: 0;
+        pointer-events: none; /* Pour ne pas bloquer les clics */
+        z-index: 9999;
+        transform: translate(-50%, -50%);
+      }
+
+      .cursor-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--accent-hub);
+        border-radius: 50%;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 10px var(--accent-hub);
+      }
+
+      .cursor-ring {
+        width: 40px;
+        height: 40px;
+        border: 2px solid rgba(0, 255, 204, 0.5);
+        border-radius: 50%;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: translate(-50%, -50%) scale(0.8);
+          opacity: 1;
+        }
+        100% {
+          transform: translate(-50%, -50%) scale(1.5);
+          opacity: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Le Curseur Custom -->
+    <div id="custom-cursor">
+      <div class="cursor-ring"></div>
+      <div class="cursor-dot"></div>
+    </div>
+
+    <div class="container">
+      <h1>Astro-Hub UI</h1>
+      <p class="text-body" style="color: var(--text-sec); margin-bottom: 40px">
+        Design System Global pour l'exposition interactive.
+      </p>
+
+      <!-- Section Couleurs -->
+      <section>
+        <h2>1. Couleurs Globales (Le Hub)</h2>
+        <div class="color-grid">
+          <div class="color-card">
+            <div
+              class="color-swatch"
+              style="background-color: var(--bg-space)"
+            ></div>
+            <div class="text-ui">Fond Spatial</div>
+            <div style="color: var(--text-sec)">#0A0A1A</div>
+          </div>
+          <div class="color-card">
+            <div
+              class="color-swatch"
+              style="background-color: var(--surface)"
+            ></div>
+            <div class="text-ui">Surface Cartes</div>
+            <div style="color: var(--text-sec)">#14142D</div>
+          </div>
+          <div class="color-card">
+            <div
+              class="color-swatch"
+              style="background-color: var(--accent-hub)"
+            ></div>
+            <div class="text-ui">Accent Hub</div>
+            <div style="color: var(--text-sec)">#00FFCC</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Identité des Planètes (Couleurs Aura)</h2>
+        <div class="color-grid">
+          <div class="color-card">
+            <div
+              class="color-swatch"
+              style="background-color: var(--accent-symphonia)"
+            ></div>
+            <div class="text-ui">Symphonia</div>
+            <div style="color: var(--text-sec)">#F72585</div>
+          </div>
+          <div class="color-card">
+            <div
+              class="color-swatch"
+              style="background-color: var(--accent-planet2)"
+            ></div>
+            <div class="text-ui">Planète 2</div>
+            <div style="color: var(--text-sec)">#FF9F1C</div>
+          </div>
+          <div class="color-card">
+            <div
+              class="color-swatch"
+              style="background-color: var(--accent-planet3)"
+            ></div>
+            <div class="text-ui">Planète 3</div>
+            <div style="color: var(--text-sec)">#2EC4B6</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section Typographie -->
+      <section>
+        <h2>3. Typographie Spatiale</h2>
+        <div style="margin-bottom: 20px">
+          <h1 style="color: var(--text-main); margin-bottom: 5px">
+            Titre Principal H1
+          </h1>
+          <p class="text-ui" style="margin-bottom: 20px">
+            Montserrat Black 900 - Espacement 4px
+          </p>
+        </div>
+
+        <div style="margin-bottom: 20px">
+          <span class="text-ui" style="font-size: 18px; color: var(--text-main)"
+            >Instructions & UI Secondaire</span
+          >
+          <p class="text-ui" style="margin-bottom: 20px">
+            Inter Bold 700 - Majuscules - Espacement 2px
+          </p>
+        </div>
+
+        <div>
+          <p class="text-body">
+            Corps de texte pour les dialogues des PNJ. La taille est
+            volontairement grande (24px) pour être parfaitement lisible par les
+            visiteurs se trouvant au centre de la pièce, entourés par les 3
+            vidéoprojecteurs.
+          </p>
+          <p class="text-ui" style="margin-top: 10px">Inter Regular 400</p>
+        </div>
+      </section>
+
+      <!-- Section Composants UI -->
+      <section>
+        <h2>4. Boutons Interactifs</h2>
+        <p class="text-ui" style="margin-bottom: 20px">
+          Survolez les boutons pour voir l'effet de sélection
+        </p>
+        <div class="btn-container">
+          <button class="btn btn-hub">Commencer (Hub)</button>
+          <button class="btn btn-symphonia">Valider la mélodie</button>
+          <button class="btn btn-planet2">Explorer</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>5. Jauges & Barres de vie</h2>
+        <div class="gauge-container">
+          <span class="text-ui gauge-label" style="color: var(--accent-hub)"
+            >Téléchargement Hub</span
+          >
+          <div class="gauge-bg">
+            <div
+              class="gauge-fill"
+              style="width: 100%; background: var(--accent-hub)"
+            ></div>
+          </div>
+        </div>
+        <div class="gauge-container">
+          <span
+            class="text-ui gauge-label"
+            style="color: var(--accent-symphonia)"
+            >Vie du Boss (Symphonia)</span
+          >
+          <div class="gauge-bg">
+            <div
+              class="gauge-fill"
+              style="width: 45%; background: var(--accent-symphonia)"
+            ></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>6. Boîte de Dialogue PNJ</h2>
+        <div class="dialog-box">
+          <div class="dialog-badge">Guide Musical</div>
+          <p class="text-body">
+            Salutations, voyageur. Notre planète perd sa voix. Le monstre au
+            centre absorbe nos fréquences. Aide-nous à retrouver les accords
+            perdus pour restaurer l'harmonie !
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <!-- Script pour le Curseur Custom -->
+    <script>
+      const cursor = document.getElementById("custom-cursor");
+
+      // Fait suivre la position de la souris au curseur personnalisé
+      document.addEventListener("mousemove", (e) => {
+        cursor.style.left = e.clientX + "px";
+        cursor.style.top = e.clientY + "px";
+      });
+
+      // Simule un changement de couleur du curseur quand on clique (Retour visuel)
+      document.addEventListener("mousedown", () => {
+        cursor.querySelector(".cursor-dot").style.transform =
+          "translate(-50%, -50%) scale(1.5)";
+      });
+      document.addEventListener("mouseup", () => {
+        cursor.querySelector(".cursor-dot").style.transform =
+          "translate(-50%, -50%) scale(1)";
+      });
+    </script>
+  </body>
+</html> 
