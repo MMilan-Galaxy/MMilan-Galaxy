@@ -1,4 +1,4 @@
-export class InteractionManager {
+class InteractionManager {
   constructor() {
     this.bindings = {};
     this.keysTracked = {};
