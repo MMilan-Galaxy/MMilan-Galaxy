@@ -84,9 +84,7 @@ class NinjaHandInteraction extends Interaction {
                 this.pwr[idx]  = Math.max(0, Math.min(1, this.pwr[idx]))
 
                 if (open && !this.wasOpen[idx]) {
-                    const vid = isR ? this.s : this.n
-                    vid.currentTime = 0
-                    vid.play()
+                    // GIF joue automatiquement, rien à faire
                 }
                 this.wasOpen[idx] = open
 
