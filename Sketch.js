@@ -1,27 +1,63 @@
-let planet
-let crystalSystem
-let questSystem
+// ── Systèmes globaux (persistent entre les planètes) ──
+let interactions, quests, crystals;
 
-function setup() {
-  createCanvas(windowWidth, windowHeight)
-  
-  // Systèmes globaux
-  crystalSystem = new CrystalSystem()
-  questSystem   = new QuestSystem()
-  
-  // Rend les systèmes accessibles globalement
-  window.crystalSystem = crystalSystem
-  window.questSystem   = questSystem
-  
-  // Planète active
-  planet = new NebulionPlanet()
+// ── Navigation ──
+let planeteActuelle;
+let indexPlanete = 0;
+
+const PLANETES = [
+  // index 0 : Test1  →  index 1 : Test2  (via vaisseau)
+  // Les autres planètes sont accessibles via N / B
+  () => new Test1(interactions, quests, crystals),
+  () => new Test2(interactions, quests, crystals),
+  () => new BasePlanet(interactions, quests, crystals),
+  () => new GraillePlanet(interactions, quests, crystals),
+  () => new GamblingPlanet(interactions, quests, crystals),
+  () => new MusiquePlanet(interactions, quests, crystals),
+  () => new NebulionPlanet(interactions, quests, crystals),
+  () => new DigitalPlanet(interactions, quests, crystals),
+  () => new DesertPlanet(interactions, quests, crystals),
+];
+const NOMS = ["Test 1","Test 2","Base","Graille","Gambling","Musique","Nebulion","Digital","Désert"];
+
+function allerPlanete(index) {
+  planeteActuelle.unload();
+  interactions.clearBindings();   // ← évite les doublons de bindings
+  quests.clearAllQuests();
+  indexPlanete    = ((index % PLANETES.length) + PLANETES.length) % PLANETES.length;
+  planeteActuelle = PLANETES[indexPlanete]();
 }
 
-function draw() {
-  planet.draw()
-  // Les HUD sont déjà affichés via le DOM, pas besoin de .draw() ici
-}
+window.setup = function () {
+  createCanvas(windowWidth, windowHeight);
+  textFont("system-ui");
 
-function windowResized() {
-  resizeCanvas(windowWidth, windowHeight)
-}
+  interactions = new Interaction();
+  quests       = new QuestSystem();
+  crystals     = new CrystalSystem();  // ne se recrée JAMAIS → mémorise les cristaux
+
+  planeteActuelle = PLANETES[0]();
+
+  // Navigation clavier (N = suivante, B = précédente)
+  interactions.bindAction("KeyN", () => allerPlanete(indexPlanete + 1));
+  interactions.bindAction("KeyB", () => allerPlanete(indexPlanete - 1));
+};
+
+window.draw = function () {
+  planeteActuelle.draw();
+
+  // Sketch surveille readyToLaunch chaque frame
+  // → déclenché par InteractionVaisseau (Test1) ou InteractionRetour (Test2)
+  if (planeteActuelle.readyToLaunch) {
+    const dest = indexPlanete === 0 ? 1 : 0; // Test1↔Test2, sinon retour
+    allerPlanete(dest);
+  }
+
+  // HUD navigation
+  noStroke(); fill(255,255,255,70); textAlign(CENTER,BOTTOM); textSize(11);
+  text(`[B] ←  ${NOMS[indexPlanete]}  (${indexPlanete+1}/${PLANETES.length})  → [N]`, width/2, height-14);
+};
+
+window.windowResized = function () {
+  resizeCanvas(windowWidth, windowHeight);
+};

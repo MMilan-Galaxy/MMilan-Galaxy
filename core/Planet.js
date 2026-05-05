@@ -1,11 +1,18 @@
 class Planet {
-    constructor(name, color) {
-      this.name  = name
-      this.color = color
-    }
-  
-    // À surcharger dans chaque planète
-    draw() {
-      throw new Error(`${this.name} : draw() doit être surchargé`)
-    }
+  constructor(name, color, interaction, questSystem) {
+    this.name = name;
+    this.color = color;
+    this.interactions = interaction;
+    this.quests = questSystem;
+
+    this.quests.clearAllQuests();
   }
+
+  draw() {
+    throw new Error(`${this.name} : draw() doit être surchargé`);
+  }
+
+  unload() {
+    this.quests.clearAllQuests();
+  }
+}
