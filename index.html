@@ -1,12 +1,51 @@
 <!doctype html>
 <html lang="fr">
+
 <head>
-  <meta charset="UTF-8"/>
+  <meta charset="UTF-8" />
   <title>MMilan Galaxy</title>
-  <style>body{margin:0;padding:0;background:#111;overflow:hidden;}</style>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #111;
+      overflow: hidden;
+    }
+  </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"></script>
 </head>
+
 <body>
+
+  <!-- Webcam source (cachée) -->
+  <video id="v_src" autoplay playsinline muted></video>
+
+  <!-- Canvas MediaPipe overlay -->
+  <canvas id="out"></canvas>
+
+  <!-- Vidéos des interactions (cachées par défaut) -->
+  <img id="n" src="assets/videos/naruto.gif" style="position:fixed;display:none;pointer-events:none">
+  <img id="s" src="assets/videos/sasuke.gif" style="position:fixed;display:none;pointer-events:none">
+
+  <!-- HUD cristaux -->
+  <div id="hud">
+    <span id="crystal-count">0</span>
+    <span id="scene-label"></span>
+  </div>
+
+  <!-- Overlay narratif -->
+  <div id="narrative-overlay" class="hidden">
+    <div id="narrative-box">
+      <p id="narrative-text"></p>
+      <button id="narrative-btn">Continuer</button>
+    </div>
+  </div>
+
+  <!-- Fallback clavier/souris -->
+  <div id="fallback-container" class="hidden"></div>
+
+  <!-- Canvas p5.js -->
+  <div id="canvas-container"></div>
 
   <!-- ── Core ── -->
   <script src="core/Interaction.js"></script>
@@ -87,4 +126,5 @@
 
   <script src="Sketch.js"></script>
 </body>
+
 </html>
