@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMILan Galaxy</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Share+Tech+Mono&display=swap"
+        rel="stylesheet" />
+    <!-- p5.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <!-- ml5.js -->
+    <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <link rel="stylesheet" href="style.css" />
+
+</head>
+
+<body>
+    <!-- Webcam source (cachée) -->
+    <video id="v_src" autoplay playsinline muted></video>
+
+    <!-- Canvas MediaPipe overlay -->
+    <canvas id="out"></canvas>
+
+    <!-- Vidéos des interactions (cachées par défaut) -->
+    <video id="n" src="assets/videos/naruto.mp4" style="position:fixed;display:none;pointer-events:none"></video>
+    <video id="s" src="assets/videos/sasuke.mp4" style="position:fixed;display:none;pointer-events:none"></video>
+
+    <!-- HUD cristaux -->
+    <div id="hud">
+        <span id="crystal-count">0</span>
+        <span id="scene-label"></span>
+    </div>
+
+    <!-- Overlay narratif -->
+    <div id="narrative-overlay" class="hidden">
+        <div id="narrative-box">
+            <p id="narrative-text"></p>
+            <button id="narrative-btn">Continuer</button>
+        </div>
+    </div>
+
+    <!-- Fallback clavier/souris -->
+    <div id="fallback-container" class="hidden"></div>
+
+    <!-- Canvas p5.js -->
+    <div id="canvas-container"></div>
+
+    <!-- Core -->
+    <script src="core/Planet.js"></script>
+    <script src="core/Interaction.js"></script>
+    <script src="core/Fallback.js"></script>
+    <script src="core/SceneManager.js"></script>
+    <script src="core/CrystalSystem.js"></script>
+    <script src="core/QuestSystem.js"></script>
+    <script src="core/NarrativeUI.js"></script>
+    <script src="core/SoundSystem.js"></script>
+
+    <!-- Interactions Nebulion -->
+    <script src="planets/nebulion/interactions/Interaction1.js"></script>
+
+    <!-- Planètes -->
+    <script src="planets/nebulion/NebulionPlanet.js"></script>
+
+    <!-- Point d'entrée -->
+    <script src="sketch.js"></script>
+
+
+</body>
+
+</html>
