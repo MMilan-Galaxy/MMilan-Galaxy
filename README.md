@@ -161,16 +161,54 @@ img.style.display = 'block'
 
 ---
 
-## Push de gros fichiers (pour Yousra/Julien uniquement)
+```markdown
+## Push de gros fichiers (vidéos, GIFs, assets lourds)
 
-Git LFS est configuré pour gérer automatiquement les gros fichiers dans `assets/`.
+Git LFS est configuré pour gérer automatiquement les fichiers volumineux dans le dossier `assets/`.
 
-**Les autres développeurs n'ont rien à faire** — Git LFS pull les fichiers automatiquement.
+### Pour les contributeurs principaux (Yousra/Julien)
 
-Si jamais des assets ne se téléchargent pas :
+Lors de l'ajout de nouveaux gros fichiers :
+
+```bash
+# S'assurer que Git LFS est installé
+git lfs install
+
+# Les fichiers suivants sont automatiquement trackés par LFS :
+# - assets/videos/*.mp4
+# - assets/videos/*.gif
+
+# Ajouter et commiter normalement
+git add assets/
+git commit -m "Ajout de nouveaux assets"
+git push origin develop
+```
+
+### Pour les autres développeurs
+
+Rien à faire de spécial ! Git LFS télécharge automatiquement les fichiers lors du `git clone` ou `git pull`.
+
+**En cas de problème** (assets manquants ou non téléchargés) :
+
 ```bash
 git lfs install
 git lfs pull
+```
+
+### Installation de Git LFS
+
+**macOS :**
+```bash
+brew install git-lfs
+```
+
+**Linux (Ubuntu/Debian) :**
+```bash
+sudo apt-get install git-lfs
+```
+
+**Windows :**
+Télécharger depuis [git-lfs.github.com](https://git-lfs.github.com/)
 ```
 
 ---
