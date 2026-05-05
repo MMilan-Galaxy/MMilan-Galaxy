@@ -3,7 +3,7 @@ let interactions, quests, crystals;
 
 // ── Navigation ──
 let planeteActuelle;
-let indexPlanete = 0;
+let indexPlanete = 6;
 
 const PLANETES = [
   // index 0 : Test1  →  index 1 : Test2  (via vaisseau)
@@ -32,11 +32,13 @@ window.setup = function () {
   createCanvas(windowWidth, windowHeight);
   textFont("system-ui");
 
-  interactions = new Interaction();
+  interactions = new InteractionManager(); 
+  interactions.init();
+
   quests       = new QuestSystem();
   crystals     = new CrystalSystem();  // ne se recrée JAMAIS → mémorise les cristaux
 
-  planeteActuelle = PLANETES[0]();
+  planeteActuelle = PLANETES[6]();
 
   // Navigation clavier (N = suivante, B = précédente)
   interactions.bindAction("KeyN", () => allerPlanete(indexPlanete + 1));

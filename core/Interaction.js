@@ -1,13 +1,12 @@
-
 class Interaction {
   constructor({ name, input, triggerFn, onSuccess, fallback = null }) {
-    this.name = name        // Nom affiché : "Le Seuil des Ninjas"
-    this.input = input       // "handpose" | "posenet" | "mic" | "keyboard" | "mouse"
+    this.name      = name        // Nom affiché : "Le Seuil des Ninjas"
+    this.input     = input       // "handpose" | "posenet" | "mic" | "keyboard" | "mouse"
     this.triggerFn = triggerFn   // () => boolean — condition de succès
     this.onSuccess = onSuccess   // () => void — appelé une seule fois au succès
-    this.fallback = fallback    // instance Fallback | null
-    this.done = false
-    this.active = false
+    this.fallback  = fallback    // instance Fallback | null
+    this.done      = false
+    this.active    = false
   }
 
   // Démarre l'interaction (+ fallback si disponible)
@@ -30,7 +29,7 @@ class Interaction {
 
   _succeed() {
     if (this.done) return
-    this.done = true
+    this.done   = true
     this.active = false
     if (this.fallback) this.fallback.stop()
     this.onSuccess()

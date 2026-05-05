@@ -1,18 +1,23 @@
-<!doctype html>
 <html lang="fr">
 
 <head>
-  <meta charset="UTF-8" />
-  <title>MMilan Galaxy</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background: #111;
-      overflow: hidden;
-    }
-  </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MMILan Galaxy</title>
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Share+Tech+Mono&display=swap"
+    rel="stylesheet" />
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <!-- ml5.js -->
+  <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+  <!-- MediaPipe Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <link rel="stylesheet" href="style.css" />
+
 </head>
 
 <body>
@@ -48,10 +53,12 @@
   <div id="canvas-container"></div>
 
   <!-- ── Core ── -->
+  <script src="core/InteractionManager.js"></script>
   <script src="core/Interaction.js"></script>
+  <script src="core/Planet.js"></script>
+  <script src="core/Fallback.js"></script>
   <script src="core/QuestSystem.js"></script>
   <script src="core/CrystalSystem.js"></script>
-  <script src="core/Planet.js"></script>
 
   <!-- ── Planète Test 1 ── -->
   <script src="planets/test1/quests/QuesteMouvement.js"></script>
@@ -104,10 +111,9 @@
   <script src="planets/musique/MusiquePlanet.js"></script>
 
   <!-- ── Nebulion ── -->
-  <script src="planets/nebulion/quests/QuesteMouvement.js"></script>
-  <script src="planets/nebulion/quests/QuesteCristal.js"></script>
-  <script src="planets/nebulion/interactions/InteractionMouvement.js"></script>
-  <script src="planets/nebulion/interactions/InteractionCristal.js"></script>
+  <!-- ── Nebulion ── -->
+  <script src="planets/nebulion/fallbacks/KeyboardFallback.js"></script>
+  <script src="planets/nebulion/interactions/Interaction1.js"></script>
   <script src="planets/nebulion/NebulionPlanet.js"></script>
 
   <!-- ── Digital ── -->

@@ -1,11 +1,13 @@
 class Planet {
-  constructor(name, color, interaction, questSystem) {
-    this.name = name;
-    this.color = color;
-    this.interactions = interaction;
-    this.quests = questSystem;
+  constructor(name, color, interactions, quests, crystals) {
+    this.name = name
+    this.color = color
+    this.interactions = interactions
+    this.quests = quests
+    this.crystals = crystals
 
-    this.quests.clearAllQuests();
+    this.quests.clearAllQuests() 
+    this.readyToLaunch = false
   }
 
   draw() {

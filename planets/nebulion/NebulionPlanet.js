@@ -1,8 +1,8 @@
 class NebulionPlanet extends Planet {
-    constructor() {
-        super('Nebulion', '#7ec8ff')
+    constructor(interactions, quests, crystals) {
+        super('Nebulion', '#7ec8ff', interactions, quests, crystals)
         
-        window.questSystem.addQuest('ninja', 'Effectuer le signe ninja')
+        quests.addQuest('ninja', 'Effectuer le signe ninja')
         
         this.interaction1 = new NinjaHandInteraction()
         this.interaction1.start()

@@ -1,13 +1,17 @@
 // interactions/Interaction1.js
 class NinjaHandInteraction extends Interaction {
     constructor() {
+        // D'abord appeler super() SANS le fallback
         super({
             name:      'Le Seuil des Ninjas',
             input:     'handpose',
             triggerFn: () => this._checkNinja(),
             onSuccess: () => this._onSuccess(),
-            fallback:  new KeyboardFallback(['z', 'x', 'c'])
+            fallback:  null 
         })
+
+        // Ensuite initialiser le fallback
+        this.fallback = new KeyboardFallback(['z', 'x', 'c'])
 
         this._timer    = 0
         this._DUREE    = 60
