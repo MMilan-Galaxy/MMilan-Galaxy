@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Symphonia · Livraisons</title>
+    <link rel="icon" href="data:," />
+
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Montserrat:wght@900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="src/styles/design-system.css" />
+
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.12/lib/p5.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.12/lib/addons/p5.sound.min.js"></script>
+    <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+    <script src="../../shared/debug-tp.js"></script>
+    <script src="../../shared/crystals.js"></script>
+  </head>
+  <body>
+    <main></main>
+
+    <div id="main-menu" class="visible">
+      <div class="menu-title-wrap">
+        <div class="menu-logo">Symphonia</div>
+        <div class="menu-subtitle-text">Livraisons Urgentes</div>
+        <div class="menu-pause-badge">En pause</div>
+      </div>
+      <div class="menu-buttons menu-buttons-main">
+        <button class="menu-btn highlight" id="btn-jouer">▶ &nbsp;Jouer</button>
+        <button class="menu-btn" id="btn-controles">Contrôles</button>
+        <button class="menu-btn" id="btn-musique">Musique</button>
+        <button class="menu-btn" id="btn-credits">Crédits</button>
+      </div>
+      <div class="menu-buttons menu-buttons-pause">
+        <button class="menu-btn highlight" id="btn-reprendre">
+          ▶ &nbsp;Reprendre
+        </button>
+        <button class="menu-btn" id="btn-controles-pause">Contrôles</button>
+        <button class="menu-btn" id="btn-musique-pause">Musique</button>
+        <button class="menu-btn" id="btn-credits-pause">Crédits</button>
+        <button class="menu-btn danger" id="btn-quit-quest">
+          Quitter la quête
+        </button>
+      </div>
+
+      <div class="menu-panel" id="panel-controles">
+        <div class="menu-panel-header">Contrôles</div>
+        <div class="ctrl-grid">
+          <kbd>Z Q S D</kbd
+          ><span class="ctrl-desc">Se déplacer dans la ville</span>
+          <kbd>E / Entrée</kbd
+          ><span class="ctrl-desc">Interagir avec un lieu ou confirmer</span>
+          <kbd>Échap</kbd
+          ><span class="ctrl-desc"
+            >Ouvrir le menu / quitter la quête en cours</span
+          >
+          <kbd>Shift + 0…6</kbd
+          ><span class="ctrl-desc">Accès direct à une quête (debug)</span>
+        </div>
+        <button class="menu-btn" id="btn-controles-back">← Retour</button>
+      </div>
+
+      <div class="menu-panel" id="panel-musique">
+        <div class="menu-panel-header">Musique de fond</div>
+        <div class="music-param-row">
+          <div class="music-param-label">
+            <span>Volume</span>
+            <span class="music-vol-value" id="bgm-vol-display">40 %</span>
+          </div>
+          <input
+            type="range"
+            id="bgm-volume-slider"
+            min="0"
+            max="1"
+            step="0.01"
+            value="0.4"
+            class="vol-slider"
+          />
+        </div>
+        <button class="menu-btn" id="btn-musique-back">← Retour</button>
+      </div>
+
+      <div class="menu-panel" id="panel-credits">
+        <div class="menu-panel-header">Crédits</div>
+        <div class="credit-list">
+          <div class="credit-item">
+            <span class="credit-name">Evan</span>
+            <span class="credit-role"
+              >Architecture · Quête 0 (intro) · Quête 3 (câblage) · Quête 5
+              (Simon)</span
+            >
+          </div>
+          <div class="credit-item">
+            <span class="credit-name">Limpia</span>
+            <span class="credit-role"
+              >Quête 1Portail mélodique (hand pose) · Quête 6Castor vocal
+              (micro)</span
+            >
+          </div>
+          <div class="credit-item">
+            <span class="credit-name">Siwar</span>
+            <span class="credit-role"
+              >Quête 2Singing Monsters · Quête 4Gramophone (hand
+              tracking)</span
+            >
+          </div>
+        </div>
+        <button class="menu-btn" id="btn-credits-back">← Retour</button>
+      </div>
+    </div>
+
+    <div id="hud-location">
+      <span class="hud-label">Symphonia</span>
+      <span class="hud-quest">Prochaine livraison…</span>
+    </div>
+
+    <div id="hud-progress">
+      <span class="ui-gauge-label">Livraisons</span>
+      <div class="ui-gauge-bg">
+        <div class="ui-gauge-fill" id="progress-fill"></div>
+      </div>
+      <span class="ui-gauge-percent" id="progress-percent">0 %</span>
+    </div>
+
+    <div id="interaction-prompt">
+      <div class="context-menu">
+        <div class="context-header" id="prompt-header">Bureau de Poste</div>
+        <div class="context-item highlight">
+          <div class="context-item-left">
+            <div class="ctx-icon icon-talk"></div>
+            <span id="prompt-action">Parler au Facteur Eugène</span>
+          </div>
+          <div class="ctx-shortcut">E</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="dialog-overlay">
+      <div class="dialog-wrap">
+        <div class="dialog-box">
+          <div class="dialog-badge" id="dialog-badge">
+            Facteur Eugène · Quête 0
+          </div>
+          <p class="dialog-text" id="dialog-text">…</p>
+          <div class="dialog-choices" id="dialog-choices">
+            <button class="choice-btn highlight" data-action="accept">
+              <span class="ctx-shortcut">E</span>
+              <span><strong>[ Accepter ]</strong> Partir en livraison</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="fade-overlay">
+      <div class="fade-text" id="fade-text"></div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <div id="boot-screen">
+      <h1>Erreur de démarrage</h1>
+      <p id="boot-message">
+        Le projet doit être ouvert via Live Server (VS Code), pas en file://.
+        ml5 et p5.sound ne peuvent pas se charger depuis le système de fichiers.
+        Sinon c'est la sauce
+      </p>
+    </div>
+
+    <script src="src/core/Player.js"></script>
+    <script src="src/core/Quest.js"></script>
+    <script src="src/core/QuestManager.js"></script>
+    <script src="src/core/QuestRunner.js"></script>
+    <script src="src/core/HUD.js"></script>
+    <script src="src/core/Transition.js"></script>
+    <script src="src/core/ProgressBar.js"></script>
+
+    <script src="src/shared/Jaxx.js"></script>
+    <script src="src/shared/Jaxx2D.js"></script>
+    <script src="src/shared/DSUI.js"></script>
+    <script src="src/shared/QuestStub.js"></script>
+
+    <script src="src/world/IsoUtils.js"></script>
+    <script src="src/world/PathBuilder.js"></script>
+    <script src="src/world/CityBuilder.js"></script>
+    <script src="src/world/CityRenderer.js"></script>
+    <script src="src/world/WorldMap.js"></script>
+
+    <script src="src/hub/Postman.js"></script>
+    <script src="src/hub/PostOffice.js"></script>
+
+    <script src="src/quests/quete0/Quete0.js"></script>
+    <script src="src/quests/quete1/Quete1.js"></script>
+    <script src="src/quests/quete2/Quete2.js"></script>
+    <script src="src/quests/quete3/Quete3.js"></script>
+    <script src="src/quests/quete4/Quete4.js"></script>
+    <script src="src/quests/quete5/Quete5.js"></script>
+    <script src="src/quests/quete6/Quete6.js"></script>
+
+    <script src="src/core/MusicManager.js"></script>
+    <script src="src/core/Game.js"></script>
+    <script src="src/main.js"></script>
+  </body>
+</html>

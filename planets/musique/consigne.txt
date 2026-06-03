@@ -1,0 +1,94 @@
+techno obligatoire : p5.js et/ou ml5.js, webjl autorisé. Le but est d'avoir des intéractions.
+dev: programmation orienté objet (POO) et clean code.
+Dimension finale du cave (5760x1200) projeté grâce à 3vidéos projecteur sur toile.
+
+Interaction indirecte :
+Faire en sorte que le décor soit réactif à l’activité. Exemple : une bande sonore qui réagit aux sons, située sur un écran que l’on utilise pas pour le visuel.
+
+Un objet à livrer par quête.
+Après chaque livraison ⇒ fondue au noir (+ petit texte par rapport à la quête ? exemple (quête 2) : “Vous avez livré le colis avec brio ! Les Singing Monsters vont pouvoir se rassasiés ! ”) ⇒ retour au bureau de poste.
+
+Barre de progression qui se complète avec chaque quête.
+Limpia
+Evan
+Siwar
+
+Dans la ville, nous avons quelques endroits où nous pouvons seulement tester et jouer avec des interactions : 
+Jouer du piano avec les doigts.
+
+Quête 0 (Evan) (10%) : Un personnage nous amène au bureau de poste et nous explique ce qu’on va devoir faire ⇒ nombre de colis (objet à livrer), où il faut les livrer et à qui. Ce personnage reste au bureau de poste pour qu’on puisse relire les informations si on le souhaite/a oublié. BONUS : Il dit qu’il ne peut pas livrer les colis par lui-même car il s’est bloqué le dos ;)
+
+Quête 1 (limpia)(25%) : On doit amener un livre à un vieil hermite. Pour cela, on doit passer par un portail fermé. Lorsqu’on interagit avec, une mélodie se joue et le but est de trouver la note manquante afin de l'ouvrir.
+On utilise nos mains.
+
+Quête 2 (Siwar)(40%) : On doit amener un paquet de croquettes (pour les Singing-Monsters, c’est des mini notes de musique) à un éleveur de Singing Monsters (changer de nom ?). On arrive devant un petit groupe de Singing Monsters mais ils sont mal placés, alors ils produisent un son catastrophique. Le but est de les placer correctement afin de faire une bonne mélodie. Lorsque cela sera fait, nous pourrons enfin délivrer le colis.
+
+Quête 3(Evan) (55%) : On doit amener un objet importé de la planète Tron à un immigré de cette planète. On va devoir rebrancher des câbles (style Among Us), pour faire en sorte que les connexions entre les pistes et l’enceinte soient correctes, car actuellement le rendu (du son) est mauvais.
+On utilise nos mains.
+
+Quête 4 (Siwar)(70%) : On doit amener un gramophone à un musicien. Il veut qu’on le teste nous-même pour être sûr qu’il fonctionne bien. Pour cela, il faut qu’on lance le vinyle à la bonne vitesse (grâce à nos mains).
+On utilise nos mains.
+
+Quête 5(Evan) (85%) : On doit amener des piles à un fabricant de jouets. Il veut qu’on teste sa dernière création.
+Reproduire la séquence d'affichage des carrés lumineux. 
+4 gros boutons colorés à l'écran (façon Simon). L'ordinateur joue une séquence de 3 ou 4 notes (exemple : Bleu, Rouge, Bleu, Jaune).
+Le joueur doit simplement cliquer sur les mêmes boutons dans le bon ordre. Rapide, efficace et purement basé sur le son et la mémoire à court terme.
+
+Quête 6(Limpia) (100%) : On doit amener une bonbonne d’eau à une famille. Pour cela, on doit passer par un pont sauf qu’il s’est écroulé. Il ne reste que des sortes de plateformes. Un castor est présent pour réparer le pont mais il doit d’abord atteindre l’autre côté. Il a besoin de notre aide pour traverser. On doit donc l’aider à sauter de plateforme en plateforme avec notre voix pour qu’il répare le pont et qu’on puisse livrer le colis.
+Flappy bird mais c’est un castor.
+On utilise notre voix.
+
+
+
+Finalité : le type du bureau de poste le remercie/paye en lui offrant un cristal.
+
+Palette des couleurs : 
+
+
+
+Noir : #0a0a0f 
+Bleu : #191970
+Rose : #ff7ad1 
+Violet : #cb6ce6
+Turquoise: #29ffdf
+Orange : #ffbd59
+Jaune : #fff854
+
+
+Violet pour les plantes (herbe + buisson + feuille)
+
+Eau turquoise
+
+Maison orange
+
+Noir contraste
+
+Bleu foncé couleur de transition 
+
+Sol rose
+
+Ciel dégradé bleu/violet
+
+Intéractions : 
+
+
+1 interaction sonore + 2 visuelles
+ou
+2 interaction sonores + 1 visuelle
+
+⬆ par personne (9 intéractions en tout)
+
+Siwar : 1 interaction sonore + 2 visuelles
+Utilisation des doigts afin de faire comme un piano, chaque doigts baissé = une note
+Chaque note joué aura un visuel
+Utilisation de la souris afin de bouger les singers monsters 
+
+Evan :
+n
+n
+n
+
+Limpia : 2 interaction sonores + 1 visuelle
+Utilisation des mains pour compléter la mélodie dans la quête 1
+Mélodie de la quête 1
+Utilisation de la voix pour faire sauter le castor dans la quête 6
