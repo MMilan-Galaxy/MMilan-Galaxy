@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.1/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.1/addons/p5.sound.min.js"></script>
+    <script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+    <script src="https://unpkg.com/p5.js-svg@1.3.1"></script>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <meta charset="utf-8" />
+  </head>
+  <body>
+    <script>
+      let capture;
+let bodyPose;
+let pose;
+let camX = 640;
+let camY = 480;
+
+// --- Système de Jeu ---
+let gameStarted = false;
+let currentTargetIndex = 0;
+let validationTimer = 0;
+let autoCloseTimer = 0;
+let gameFinished = false; 
+const THRESHOLD = 40; 
+
+// --- CONFIGURATION DU FOND DISCO ---
+const PALETTE = [
+  [255,50,50],[50,220,255],[255,200,0],[180,50,255],
+  [50,255,120],[255,80,200],[255,130,0],[80,160,255],
+];
+let spots = [];
+const NUM_SPOTS = 44; 
+
+class Spot {
+  constructor() {
+    this.reset();
+    this.life = random(140);
+  }
+  reset() {
+    if (random() > 0.5) {
+      this.x = random(0, 1920);
+      this.tx = random(0, 1920);
+    } else {
+      this.x = random(3840, 5760);
+      this.tx = random(3840, 5760);
+    }
+    this.y = random(0, 1200);
+    this.ty = random(0, 1200);
+    this.r = 40 + random(120);
+    this.rgb = random(PALETTE);
+    this.alpha = 0;
+    this.ta = 0.35 + random(0.5);
+    this.spd = 0.0012 + random(0.0025);
+    this.life = 0;
+    this.max = 90 + random(160);
+  }
+  update() {
+    this.x += (this.tx - this.x) * this.spd;
+    this.y += (this.ty - this.y) * this.spd;
+    this.life++;
+    if (this.life < 25) this.alpha = (this.life / 25) * this.ta;
+    else if (this.life > this.max - 25) this.alpha = ((this.max - this.life) / 25) * this.ta;
+    if (this.life >= this.max) this.reset();
+  }
+  drawSpot() {
+    let ctx = drawingContext;
+    const [r,g,b] = this.rgb;
+    const gr = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+    gr.addColorStop(0,   `rgba(${r},${g},${b},${this.alpha})`);
+    gr.addColorStop(0.4, `rgba(${r},${g},${b},${this.alpha * 0.5})`);
+    gr.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// 1. Définition des mouvements
+const danceMoves = [
+  {
+    name: "ANGLE GAUCHE HAUT",
+    instructions: { l_wrist: {x: 180, y: 150}, l_elbow: {x: 180, y: 220}, r_wrist: {x: 440, y: 350}, r_elbow: {x: 440, y: 280} },
+    check: (p) => p.left_wrist.y < p.left_shoulder.y && p.right_wrist.y > p.right_shoulder.y
+  },
+  {
+    name: "ANGLE DROIT HAUT", 
+    instructions: { l_wrist: {x: 200, y: 350}, l_elbow: {x: 200, y: 280}, r_wrist: {x: 460, y: 150}, r_elbow: {x: 460, y: 220} },
+    check: (p) => p.right_wrist.y < p.right_shoulder.y && p.left_wrist.y > p.left_shoulder.y
+  },
+  {
+    name: "MAINS SUR LA TÊTE",
+    instructions: { l_wrist: {x: 280, y: 80}, r_wrist: {x: 360, y: 80}, l_elbow: {x: 220, y: 150}, r_elbow: {x: 420, y: 150} },
+    check: (p) => p.left_wrist.y < p.nose.y && p.right_wrist.y < p.nose.y
+  },
+  {
+    name: "BRAS LEVÉ DROIT", 
+    instructions: { l_wrist: {x: 230, y: 380}, l_elbow: {x: 240, y: 280}, r_wrist: {x: 460, y: 50}, r_elbow: {x: 410, y: 170} },
+    check: (p) => p.right_wrist.y < p.right_shoulder.y && p.left_wrist.y > p.left_shoulder.y
+  },
+  {
+    name: "BRAS LEVÉ GAUCHE", 
+    instructions: { l_wrist: {x: 180, y: 50}, l_elbow: {x: 230, y: 170}, r_wrist: {x: 410, y: 380}, r_elbow: {x: 400, y: 280} },
+    check: (p) => p.left_wrist.y < p.left_shoulder.y && p.right_wrist.y > p.right_shoulder.y
+  },
+  {
+    name: "LES ÉQUERRES",
+    instructions: { l_elbow: {x: 240, y: 190}, r_elbow: {x: 400, y: 190}, l_wrist: {x: 240, y: 280}, r_wrist: {x: 400, y: 280} },
+    check: (p) => p.left_wrist.y > p.left_elbow.y && p.right_wrist.y > p.right_elbow.y
+  },
+  {
+    name: "BRAS EN T", 
+    instructions: { l_wrist: {x: 150, y: 200}, l_elbow: {x: 230, y: 200}, r_wrist: {x: 490, y: 200}, r_elbow: {x: 410, y: 200} },
+    check: (p) => abs(p.left_wrist.y - p.left_shoulder.y) < 80 && abs(p.right_wrist.y - p.right_shoulder.y) < 80
+  },
+  {
+    name: "ÉGYPTIENNE",
+    instructions: { l_wrist: {x: 180, y: 150}, l_elbow: {x: 250, y: 150}, r_wrist: {x: 460, y: 250}, r_elbow: {x: 390, y: 250} },
+    check: (p) => p.left_wrist.y < p.left_elbow.y && p.right_wrist.y > p.right_elbow.y && abs(p.left_elbow.y - p.left_shoulder.y) < 50
+  },
+  {
+    name: "BRAS CROISÉS (X)",
+    instructions: { l_wrist: {x: 400, y: 150}, l_elbow: {x: 320, y: 200}, r_wrist: {x: 240, y: 150}, r_elbow: {x: 320, y: 200} },
+    check: (p) => p.left_wrist.x > p.right_shoulder.x && p.right_wrist.x < p.left_shoulder.x
+  },
+  {
+    name: "ANGLE GAUCHE HAUT",
+    instructions: { l_wrist: {x: 180, y: 150}, l_elbow: {x: 180, y: 220}, r_wrist: {x: 440, y: 350}, r_elbow: {x: 440, y: 280} },
+    check: (p) => p.left_wrist.y < p.left_shoulder.y && p.right_wrist.y > p.right_shoulder.y
+  },
+  {
+    name: "ANGLE DROIT HAUT", 
+    instructions: { l_wrist: {x: 200, y: 350}, l_elbow: {x: 200, y: 280}, r_wrist: {x: 460, y: 150}, r_elbow: {x: 460, y: 220} },
+    check: (p) => p.right_wrist.y < p.right_shoulder.y && p.left_wrist.y > p.left_shoulder.y
+  },
+   {
+    name: "ÉGYPTIENNE",
+    instructions: { l_wrist: {x: 180, y: 150}, l_elbow: {x: 250, y: 150}, r_wrist: {x: 460, y: 250}, r_elbow: {x: 390, y: 250} },
+    check: (p) => p.left_wrist.y < p.left_elbow.y && p.right_wrist.y > p.right_elbow.y && abs(p.left_elbow.y - p.left_shoulder.y) < 50
+  },
+];
+
+function preload() {
+  bodyPose = ml5.bodyPose();
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  capture = createCapture(VIDEO);
+  capture.size(camX, camY);
+  capture.hide();
+
+  bodyPose.detectStart(capture, (results) => {
+    if (results.length > 0) pose = results[0];
+  });
+
+  // Initialisation des 44 spots (une seule fois au démarrage)
+  for (let i = 0; i < NUM_SPOTS; i++) {
+    spots.push(new Spot());
+  }
+}
+
+function draw() {
+  // 1. Fond sombre par défaut pour l'écran des règles
+  background(15); 
+
+  // 2. Si le jeu n'est pas lancé, on affiche les règles et on s'arrête là (pas de spots !)
+  if (!gameStarted) {
+    drawStartScreen();
+    return;
+  }
+
+  // 3. SI LE JEU COMMENCE : On passe sur le fond bleu et on active les spots
+  background(4, 4, 18); // Fond bleu nuit disco
+
+  spots.forEach(s => {
+    s.update();
+    s.drawSpot();
+  });
+
+  let scaleFactor = min((width / 2.2) / camX, height / camY);
+  let w = camX * scaleFactor;
+  let h = camY * scaleFactor;
+
+  // --- 1. GAUCHE : LE COACH OU MESSAGE DE FIN ---
+  push();
+  translate(50, (height - h) / 2);
+  
+  if (gameFinished) {
+    // [AJOUT] Initialisation du timer (180 frames = 3 secondes)
+    if (autoCloseTimer === 0) autoCloseTimer = frameCount + 180;
+
+    fill(0, 255, 136);
+    noStroke();
+
+    fill(0, 255, 136);
+    textSize(30);
+    text("BRAVO !", w / 2, h / 2 - 60);
+
+    fill(240, 240, 255);
+    textSize(30);
+    text("Session terminée", w / 2, h / 2 + 10);
+
+    fill(255, 215, 0);
+    textSize(26);
+    text("+1 CRISTAL", w / 2, h / 2 + 60);
+
+    // [AJOUT] Calcul et affichage du temps restant
+    let tempsRestant = floor(max(0, (autoCloseTimer - frameCount) / 60));
+    textSize(20); 
+    fill(255, 180);
+    text("Fermeture dans " + tempsRestant + "s...", w / 2, h / 2 + 110);
+
+    // [AJOUT] Message d'indication pour la touche ENTRÉE
+    fill(255, 130);
+    textSize(16);
+    text("OU Appuyez sur ENTREE pour quitter", w / 2, h / 2 + 150);
+
+    // [AJOUT] Action de fermeture automatique ou forcée
+    if (frameCount >= autoCloseTimer || (keyIsPressed && keyCode === ENTER)) {
+      if (window.parent && window.parent.quitterDancefloor) {
+        window.parent.quitterDancefloor();
+      }
+    }
+  } else {
+    drawCoach(scaleFactor);
+    fill(0, 200, 255);
+    noStroke();
+    textSize(24);
+    textAlign(CENTER);
+    text(danceMoves[currentTargetIndex].name, w/2, -30);
+  }
+  pop();
+
+  // --- 2. DROITE : L'UTILISATEUR ---
+  push();
+  translate(width - w - 50, (height - h) / 2);
+  push();
+  translate(w, 0);
+  scale(-1, 1); 
+  image(capture, 0, 0, w, h);
+  if (pose) drawBodySkeleton(pose, scaleFactor);
+  pop();
+  noFill();
+  stroke(255, 50);
+  rect(0, 0, w, h);
+  pop();
+
+  // --- 3. LOGIQUE DE VALIDATION ---
+  if (!gameFinished && pose && danceMoves[currentTargetIndex].check(pose)) {
+    validationTimer++;
+    if (validationTimer > THRESHOLD) {
+      if (currentTargetIndex < danceMoves.length - 1) {
+        currentTargetIndex++;
+      } else {
+        gameFinished = true;
+        terminerSession(); // <--- APPELLE-LE UNIQUEMENT ICI !
+      }
+      validationTimer = 0;
+    }
+  } else {
+    validationTimer = max(0, validationTimer - 0.5);
+  }
+
+  drawProgressBar();
+}
+
+  // --- ÉCRAN D'ACCUEIL AVEC LES RÈGLES ---
+function drawStartScreen() {
+  textAlign(CENTER, CENTER);
+  textFont('monospace');
+  
+  // Titre principal
+  fill(0, 200, 255);
+  textSize(50);
+  text("JUST POSE", width / 2, height / 2 - 200);
+  
+  // Section Règles (Agrandie à 28)
+  textSize(24);
+  fill(200, 200, 255);
+  text("RÈGLES DU JEU :", width / 2, height / 2 - 100);
+  
+  // Contenu des règles
+  textSize(20);
+  fill(200, 200, 255);
+  text("Reproduisez les poses du coach bleu.", width / 2, height / 2 - 40);
+  text("Maintenez la position jusqu'à la validation.", width / 2, height / 2 + 10);
+  
+  // Section Récompense
+  textSize(20);
+  fill(200, 200, 255);
+  text("Terminez la session pour gagner 1 CRISTAL !", width / 2, height / 2 + 80);
+  
+  // Bouton d'action
+  textSize(24);
+  fill(255, 255, 255);
+  text("Cliquez ici pour démarrer", width / 2, height / 2 + 160);
+}
+
+  // Déclenche le début de la partie lors d'un clic de souris
+  function mousePressed() {
+    if (!gameStarted) {
+      gameStarted = true;
+    }
+  }
+
+function drawCoach(sc) {
+  let move = danceMoves[currentTargetIndex].instructions;
+  let cx = 320 * sc; 
+  stroke(0, 200, 255);
+  strokeWeight(4 * sc);
+  noFill();
+
+  ellipse(cx, 100 * sc, 50 * sc, 60 * sc); // Tête ovale
+
+  beginShape(); // Buste trapèze
+  vertex(cx - 50 * sc, 160 * sc); 
+  vertex(cx + 50 * sc, 160 * sc); 
+  vertex(cx + 35 * sc, 320 * sc); 
+  vertex(cx - 35 * sc, 320 * sc); 
+  endShape(CLOSE);
+
+  line(cx - 50 * sc, 160 * sc, move.l_elbow.x * sc, move.l_elbow.y * sc);
+  line(move.l_elbow.x * sc, move.l_elbow.y * sc, move.l_wrist.x * sc, move.l_wrist.y * sc);
+  line(cx + 50 * sc, 160 * sc, move.r_elbow.x * sc, move.r_elbow.y * sc);
+  line(move.r_elbow.x * sc, move.r_elbow.y * sc, move.r_wrist.x * sc, move.r_wrist.y * sc);
+}
+
+function drawBodySkeleton(p, sc) {
+  stroke(255);
+  strokeWeight(3 * sc);
+  noFill();
+  const getX = (kp) => kp.x * sc;
+  const getY = (kp) => kp.y * sc;
+
+  ellipse(getX(p.nose), getY(p.nose), 35 * sc, 45 * sc);
+
+  beginShape();
+  vertex(getX(p.left_shoulder), getY(p.left_shoulder));
+  vertex(getX(p.right_shoulder), getY(p.right_shoulder));
+  vertex(getX(p.right_hip), getY(p.right_hip));
+  vertex(getX(p.left_hip), getY(p.left_hip));
+  endShape(CLOSE);
+
+  line(getX(p.left_shoulder), getY(p.left_shoulder), getX(p.left_elbow), getY(p.left_elbow));
+  line(getX(p.left_elbow), getY(p.left_elbow), getX(p.left_wrist), getY(p.left_wrist));
+  line(getX(p.right_shoulder), getY(p.right_shoulder), getX(p.right_elbow), getY(p.right_elbow));
+  line(getX(p.right_elbow), getY(p.right_elbow), getX(p.right_wrist), getY(p.right_wrist));
+}
+
+function drawProgressBar() {
+  if (gameFinished) return;
+  
+  let barWidth = 500;
+  let barHeight = 24;
+  let barY = height - 150;
+  
+  fill(50);
+  noStroke();
+  rect(width/2 - barWidth/2, barY, barWidth, barHeight, 12);
+  
+  fill(0, 255, 136);
+  let progress = map(validationTimer, 0, THRESHOLD, 0, barWidth);
+  rect(width/2 - barWidth/2, barY, progress, barHeight, 12);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
+
+let cristalDonne = false;
+let sessionTerminee = false; // Petit verrou supplémentaire
+
+function terminerSession() {
+    // Si c'est déjà fait, on ne fait rien
+    if (sessionTerminee) return;
+    
+    sessionTerminee = true;
+
+    // 1. Ajout du cristal (une seule fois)
+    if (!cristalDonne && window.parent && window.parent.addCrystals) {
+        window.parent.addCrystals(1);
+        cristalDonne = true;
+    }
+
+    // 2. Fermeture automatique après 3 secondes
+    setTimeout(() => {
+        if (window.parent && window.parent.quitterDancefloor) {
+            window.parent.quitterDancefloor();
+        }
+    }, 3000);
+}
+
+
+
+    </script>
+  </body>
+</html>

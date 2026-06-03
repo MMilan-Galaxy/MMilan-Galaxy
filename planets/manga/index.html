@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Planète Manga</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Montserrat:wght@900&family=Bangers&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.1/p5.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.1/addons/p5.sound.min.js"></script>
+<script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+
+:root {
+  --accent: #ff8c1a;
+  --accent2: #ffd700;
+  --accent3: #c41e3a;
+  --accent4: #2d8f3a;
+  --accent5: #4a90e2;
+  --accent6: #ff8c1a;
+  --bg: #07060d;
+  --surface: rgba(18, 12, 8, 0.85);
+  --surface-dark: rgba(8, 6, 4, 1);
+  --text: #fff5e1;
+  --text-sec: #9e8e74;
+  --font-title: 'Bangers', 'Montserrat', sans-serif;
+  --font-ui: 'Inter', sans-serif;
+  --snappy: 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+body, html { background: var(--bg); overflow: hidden; width: 100%; height: 100%; font-family: var(--font-ui); color: var(--text); }
+
+#iso-canvas { display: block; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+
+/* film grain + vignette overlays */
+#vignette { display: none; }
+
+/* ─── HUD ─── */
+
+#mission-hud {
+  position: fixed; top: 26px; left: 36px;
+  background: var(--surface-dark);
+  border: 1px solid var(--accent);
+  padding: 10px 22px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  z-index: 90;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  min-width: 300px;
+}
+#mission-label { font-size: 10px; text-transform: uppercase; letter-spacing: 3px; color: var(--text-sec); }
+#mission-text { font-family: var(--font-title); letter-spacing: 1.5px; font-size: 18px; color: var(--accent); }
+#biome-tag { font-size: 11px; letter-spacing: 2px; color: var(--accent5); margin-top: 2px; text-transform: uppercase; }
+
+/* mute button */
+#mute-btn {
+  position: fixed; bottom: 22px; right: 36px; z-index: 91;
+  width: 46px; height: 46px; border-radius: 50%;
+  background: var(--surface-dark); border: 1px solid var(--accent);
+  color: var(--accent); font-size: 20px; cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5); transition: var(--snappy);
+}
+#mute-btn:hover { transform: scale(1.1); }
+
+/* progress dots */
+#progress-hud {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 9px; z-index: 90;
+  background: var(--surface-dark); padding: 9px 16px;
+  border: 1px solid rgba(255,140,26,0.25);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.pdot { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2); transition: var(--snappy); }
+.pdot.done { background: var(--accent2); border-color: var(--accent2); box-shadow: 0 0 10px var(--accent2); }
+.pdot.current { background: var(--accent); border-color: #fff; box-shadow: 0 0 14px var(--accent); animation: float 1.4s ease-in-out infinite; }
+
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+/* ─── DIALOG ─── */
+#dialog-overlay { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 0 40px 70px; z-index: 100; pointer-events: none; }
+#dialog-overlay.active { display: block; pointer-events: all; background: linear-gradient(0deg, rgba(5,3,0,0.98) 0%, rgba(5,3,0,0.85) 70%, transparent 100%); }
+.dialog-box {
+  background: linear-gradient(135deg, var(--surface-dark) 0%, #0a0500 100%);
+  border-top: 4px solid var(--accent); border-bottom: 1px solid var(--accent);
+  padding: 28px 40px; position: relative;
+  box-shadow: inset 0 20px 50px rgba(0,0,0,0.5), 0 -20px 80px rgba(255,140,26,0.15);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%);
+  max-width: 1200px; margin: 0 auto;
+}
+.dialog-badge {
+  position: absolute; top: 0; left: 0; background: var(--accent); color: #000;
+  padding: 6px 24px; font-weight: 900; font-size: 13px; text-transform: uppercase; letter-spacing: 2px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 15px) 100%, 0 100%);
+}
+.dialog-text { font-size: 20px; line-height: 1.6; color: var(--text); font-style: italic; margin-top: 15px; min-height: 50px; }
+.dialog-action {
+  margin-top: 18px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; color: var(--text-sec);
+  font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;
+  border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 14px;
+}
+.ctx-shortcut {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 8px;
+  border: 2px solid var(--accent); background: rgba(255,140,26,0.08); color: var(--accent);
+  font-weight: 900; font-size: 12px; letter-spacing: 1px; border-radius: 4px;
+}
+.dialog-choices { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; border-top: 1px dashed var(--accent); padding-top: 18px; position: relative; z-index: 2; background: linear-gradient(180deg, rgba(10,8,5,0.95), rgba(5,3,0,0.98)); margin-left: -40px; margin-right: -40px; padding-left: 40px; padding-right: 40px; padding-bottom: 6px; }
+.choice-btn {
+  background: rgba(10,8,5,0.95); border: 1px solid var(--accent); color: var(--text-sec); font-family: var(--font-ui);
+  font-size: 16px; text-align: left; padding: 12px 20px; cursor: pointer; transition: var(--snappy);
+  display: flex; align-items: center; gap: 15px; position: relative; z-index: 2;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  border-left: 3px solid transparent;
+}
+.choice-btn:hover { color: var(--text); background: linear-gradient(90deg, rgba(255,140,26,0.12) 0%, transparent 100%); border-left: 3px solid var(--accent); padding-left: 28px; }
+.choice-btn.highlight { color: var(--accent2); }
+.choice-btn.highlight:hover { border-left-color: var(--accent2); }
+.choice-btn.danger { color: var(--accent3); }
+.choice-btn.danger:hover { border-left-color: var(--accent3); }
+
+/* ─── INTERACTION MODAL ─── */
+#interaction-container { display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; background: #050300; z-index: 9999; }
+#interaction-frame { width: 100%; height: 100%; border: none; }
+.btn-quitter {
+  position: absolute; top: 40px; right: 40px; z-index: 10000; padding: 15px 30px;
+  background: var(--accent); color: #000; font-weight: 900; border: none; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 2px; font-family: var(--font-title); font-size: 18px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+/* ─── INTRO ─── */
+#intro { position: fixed; inset: 0; background: radial-gradient(circle at 50% 35%, #1a0f25 0%, #000 75%); z-index: 9998;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: var(--font-title); letter-spacing: 3px; transition: opacity 0.8s; overflow: hidden; }
+#intro h1 { font-size: 104px; color: var(--accent); text-shadow: 0 0 40px var(--accent), 0 0 90px var(--accent3); position: relative; z-index: 2; }
+#intro h1 .sub { display:block; font-size: 26px; color: var(--accent5); letter-spacing: 8px; -webkit-text-stroke: 0; text-shadow: 0 0 20px var(--accent5); }
+#intro p { color: var(--text-sec); letter-spacing: 4px; margin-top: 18px; font-family: var(--font-ui); font-size: 14px; z-index: 2;}
+#intro button { margin-top: 46px; padding: 18px 54px; font-family: var(--font-title); letter-spacing: 4px; font-size: 24px;
+  background: var(--accent); color: #000; border: none; cursor: pointer; z-index: 2;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  box-shadow: 0 0 40px rgba(255,140,26,0.5); transition: transform .2s; }
+#intro button:hover { transform: scale(1.06); }
+#intro.hidden { opacity: 0; pointer-events: none; }
+#intro canvas.bgfx { position: absolute; inset: 0; z-index: 1; opacity: 0.5; }
+</style>
+    <script src="../../shared/debug-tp.js"></script>
+    <script src="../../shared/crystals.js"></script>
+</head>
+<body>
+
+<canvas id="iso-canvas"></canvas>
+<div id="vignette"></div>
+
+<div id="mission-hud">
+  <span id="mission-label">Mission en cours</span>
+  <span id="mission-text">Livrer le colis du Sage</span>
+  <span id="biome-tag">Forêt de Konoha</span>
+</div>
+
+
+<div id="progress-hud"></div>
+
+<button id="mute-btn" title="Couper le son (M)">🔊</button>
+
+<div id="dialog-overlay">
+  <div class="dialog-box">
+    <div class="dialog-badge" id="dialog-speaker">NPC</div>
+    <p class="dialog-text" id="dialog-text"></p>
+    <div id="dialog-choices" class="dialog-choices" style="display:none"></div>
+    <div class="dialog-action" id="dialog-action"><span>Continuer</span><span class="ctx-shortcut">ESPACE</span></div>
+  </div>
+</div>
+
+<div id="intro">
+  <h1>PLANÈTE MANGA<span class="sub">漫画惑星</span></h1>
+  <p>— Traverse 10 mondes légendaires, livre le colis du Sage —</p>
+  <button id="start-btn">COMMENCER L'AVENTURE</button>
+</div>
+
+<div id="interaction-container">
+    <iframe id="interaction-frame" src="" allow="microphone *; autoplay *; camera *"></iframe>
+    <button class="btn-quitter" onclick="quitterInteraction()">Quitter</button>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// ÉTAT GLOBAL
+// ══════════════════════════════════════════════════════════════
+let dialogOpen = false;
+const gameProgress = {
+  porteOuverte: false, jutsuFait: false, onepieceFait: false, demonFait: false,
+  yugiohFait: false, saiyanFait: false, deathnoteFait: false, hokutoFait: false,
+  pokemonFait: false, colisLivre: false,
+};
+// Order of zones for gating + progress dots
+const ZONE_ORDER = ['porteOuverte','jutsuFait','onepieceFait','demonFait','yugiohFait','saiyanFait','deathnoteFait','hokutoFait','pokemonFait','colisLivre'];
+
+function addCrystals(n) {
+  if (typeof MangaAudio !== 'undefined') MangaAudio.sfx.crystal();
+}
+function setMission(t) { document.getElementById('mission-text').textContent = t; }
+
+// progress dots
+const progHud = document.getElementById('progress-hud');
+ZONE_ORDER.forEach((k, i) => { const d = document.createElement('div'); d.className = 'pdot'; d.id = 'pdot-' + i; progHud.appendChild(d); });
+function refreshProgress() {
+  let firstUndone = ZONE_ORDER.findIndex(k => !gameProgress[k]);
+  ZONE_ORDER.forEach((k, i) => {
+    const d = document.getElementById('pdot-' + i);
+    d.className = 'pdot' + (gameProgress[k] ? ' done' : (i === firstUndone ? ' current' : ''));
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// AUDIO — musique procédurale libre de droit + SFX
+// ══════════════════════════════════════════════════════════════
+const MangaAudio = (() => {
+  let actx = null, master = null, musicGain = null, sfxGain = null;
+  let muted = false, musicTimer = null, started = false;
+  let delayNode = null;
+
+  function init() {
+    if (actx) return;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    master = actx.createGain(); master.gain.value = 0.9; master.connect(actx.destination);
+    musicGain = actx.createGain(); musicGain.gain.value = 0.0; musicGain.connect(master);
+    sfxGain = actx.createGain(); sfxGain.gain.value = 0.9; sfxGain.connect(master);
+    // gentle echo for the music
+    delayNode = actx.createDelay(); delayNode.delayTime.value = 0.38;
+    const fb = actx.createGain(); fb.gain.value = 0.28;
+    delayNode.connect(fb); fb.connect(delayNode); delayNode.connect(musicGain);
+  }
+  function resume() { if (actx && actx.state === 'suspended') actx.resume(); }
+
+  // ─── SFX ─────────────────────────────────────────────
+  function blip(freq, type, dur, vol, target) {
+    if (!actx || muted) return;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+    o.connect(g); g.connect(target || sfxGain);
+    o.start(); o.stop(actx.currentTime + dur);
+  }
+  const SFX = {
+    step()    { blip(90 + Math.random()*20, 'sine', 0.06, 0.05); },
+    type()    { blip(420, 'square', 0.02, 0.015); },
+    zone()    { blip(330,'sine',0.12,0.08); setTimeout(()=>blip(495,'sine',0.18,0.07),70); },
+    crystal() { [660,880,1320].forEach((f,i)=>setTimeout(()=>blip(f,'sine',0.25,0.1),i*80)); },
+    open()    { blip(523,'triangle',0.3,0.09); setTimeout(()=>blip(784,'sine',0.4,0.08),120); },
+  };
+
+  // ─── Musique procédurale (pad + arpège, progression douce) ───
+  // Gamme La mineur pentatonique, progression Am–F–C–G
+  const CHORDS = [
+    [220.00, 261.63, 329.63],  // Am
+    [174.61, 220.00, 261.63],  // F
+    [261.63, 329.63, 392.00],  // C
+    [196.00, 246.94, 293.66],  // G
+  ];
+  const ARP = [440.00, 523.25, 659.25, 587.33, 523.25, 659.25]; // A C E D C E
+  let chordIdx = 0, arpIdx = 0;
+
+  function playPadChord(freqs) {
+    if (!actx || muted) return;
+    const t = actx.currentTime, dur = 4.0;
+    for (const f of freqs) {
+      for (const det of [-3, 3]) {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = det;
+        const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 850;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.05, t + 1.2);
+        g.gain.linearRampToValueAtTime(0.0001, t + dur);
+        o.connect(lp); lp.connect(g); g.connect(musicGain);
+        o.start(t); o.stop(t + dur + 0.1);
+      }
+    }
+  }
+  function playArpNote() {
+    if (!actx || muted) return;
+    const o = actx.createOscillator(), g = actx.createGain();
+    const f = ARP[arpIdx % ARP.length] * (chordIdx % 2 === 0 ? 1 : 0.75);
+    o.type = 'triangle'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, actx.currentTime);
+    g.gain.linearRampToValueAtTime(0.06, actx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.5);
+    o.connect(g); g.connect(delayNode);
+    o.start(); o.stop(actx.currentTime + 0.55);
+    arpIdx++;
+  }
+
+  function startMusic() {
+    if (started) return; started = true;
+    musicGain.gain.linearRampToValueAtTime(0.5, actx.currentTime + 3);
+    playPadChord(CHORDS[0]);
+    let beat = 0;
+    musicTimer = setInterval(() => {
+      if (muted) return;
+      // pad every 8 eighth-notes (~4s at 500ms), arp on offbeats
+      if (beat % 8 === 0) { chordIdx = (chordIdx + 1) % CHORDS.length; playPadChord(CHORDS[chordIdx]); }
+      if (beat % 2 === 0) playArpNote();
+      beat++;
+    }, 500);
+  }
+
+  function toggleMute() {
+    muted = !muted;
+    if (master) master.gain.value = muted ? 0 : 0.9;
+    return muted;
+  }
+  return {
+    init, resume, startMusic, sfx: SFX, toggleMute,
+    isMuted: () => muted,
+  };
+})();
+
+const muteBtn = document.getElementById('mute-btn');
+muteBtn.onclick = () => { const m = MangaAudio.toggleMute(); muteBtn.textContent = m ? '🔇' : '🔊'; };
+window.addEventListener('keydown', e => { if (e.key === 'm' || e.key === 'M') muteBtn.onclick(); });
+
+// ─── Permission caméra/micro UNIQUE, partagée avec les iframes ───
+const CAMERA_EPREUVES = new Set(['porte','naruto','onepiece','demonslayer','yugioh','saiyan','deathnote']);
+async function ensureMedia() {
+  if (window.__mangaStream && window.__mangaStream.active) return window.__mangaStream;
+  try {
+    window.__mangaStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }, audio: true
+    });
+  } catch (e) { console.warn('Permission média refusée:', e); window.__mangaStream = null; }
+  return window.__mangaStream;
+}
+
+// ══════════════════════════════════════════════════════════════
+// DIALOGUE
+// ══════════════════════════════════════════════════════════════
+const dlgOverlay = document.getElementById('dialog-overlay');
+const dlgSpeaker = document.getElementById('dialog-speaker');
+const dlgText = document.getElementById('dialog-text');
+const dlgChoices = document.getElementById('dialog-choices');
+const dlgAction = document.getElementById('dialog-action');
+let typewriterTimer = null;
+
+function typewrite(text, el, onDone) {
+  el.textContent = ''; let i = 0; clearInterval(typewriterTimer);
+  typewriterTimer = setInterval(() => { el.textContent += text[i++]; if (i % 2 === 0 && typeof MangaAudio !== 'undefined') MangaAudio.sfx.type(); if (i >= text.length) { clearInterval(typewriterTimer); if (onDone) onDone(); } }, 20);
+}
+function showDialog(speaker, text, choices = null) {
+  dialogOpen = true;
+  dlgSpeaker.textContent = speaker; dlgSpeaker.style.background = speakerColor(speaker);
+  dlgChoices.style.display = 'none'; dlgChoices.innerHTML = ''; dlgAction.style.display = 'flex';
+  typewrite(text, dlgText, () => {
+    if (choices) {
+      dlgChoices.style.display = 'flex'; dlgAction.style.display = 'none';
+      choices.forEach((c, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'choice-btn' + (c.cls ? ' ' + c.cls : '');
+        btn.innerHTML = `<span class="ctx-shortcut">${idx + 1}</span>${c.label}`;
+        btn.onclick = () => { closeDialog(); if (c.action) c.action(); };
+        btn.onclickAction = c.action; dlgChoices.appendChild(btn);
+      });
+    }
+  });
+  dlgOverlay.classList.add('active');
+}
+function closeDialog() { dialogOpen = false; dlgOverlay.classList.remove('active'); clearInterval(typewriterTimer); }
+function speakerColor(s) {
+  const c = { 'Garde de Konoha': '#2d8f3a', 'Naruto': '#ff8c1a', 'Luffy': '#c41e3a', 'Tanjiro': '#1a8f8f',
+    'Le Pharaon': '#9d4edd', 'Maître Saiyan': '#ffd700', 'Ryuk': '#5a2d8c', 'Kenshiro': '#c41e3a',
+    'Dresseur': '#4a90e2', 'Le Sage': '#9d4edd', 'SYSTÈME': '#ff8c1a' };
+  return c[s] || '#ff8c1a';
+}
+document.addEventListener('keydown', (e) => {
+  if (!dialogOpen) return;
+  if (e.code === 'Space' && dlgChoices.querySelectorAll('button').length === 0) { e.preventDefault(); closeDialog(); }
+  if (e.key >= '1' && e.key <= '9') {
+    const idx = parseInt(e.key) - 1; const buttons = dlgChoices.querySelectorAll('button');
+    if (buttons[idx]) { closeDialog(); if (buttons[idx].onclickAction) buttons[idx].onclickAction(); }
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// ISO ENGINE
+// ══════════════════════════════════════════════════════════════
+const C = document.getElementById('iso-canvas');
+const ctx = C.getContext('2d');
+const TW = 90, TH = 40;
+const ROWS = 7, COLS = 104;
+let camX = 0;
+
+function resizeCanvas() { C.width = window.innerWidth; C.height = window.innerHeight; }
+window.addEventListener('resize', resizeCanvas); resizeCanvas();
+
+function iso(gx, gy, gz = 0) {
+  const ox = C.width * 0.14, oy = C.height * 0.48;
+  return { x: ox + gx * TW + gy * TW * 0.5 - camX, y: oy + gy * TH * 0.5 - gz * TH };
+}
+function topFace(gx, gy, gz, fillStyle, stroke_ = 'rgba(0,0,0,0.18)') {
+  const p = iso(gx, gy, gz);
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + TW, p.y + TH * 0.5);
+  ctx.lineTo(p.x + TW + TW * 0.5, p.y); ctx.lineTo(p.x + TW * 0.5, p.y - TH * 0.5); ctx.closePath();
+  ctx.fillStyle = fillStyle; ctx.fill(); ctx.strokeStyle = stroke_; ctx.lineWidth = 0.4; ctx.stroke();
+}
+function box(gx, gy, gz, gw, gd, gh, topC, leftC, rightC) {
+  const tl = iso(gx, gy, gz + gh), tr = iso(gx + gw, gy, gz + gh);
+  const fl_tl = iso(gx, gy + gd, gz + gh), fl_tr = iso(gx + gw, gy + gd, gz + gh);
+  const fl_br = iso(gx + gw, gy + gd, gz), fl_bl = iso(gx, gy + gd, gz), br = iso(gx + gw, gy, gz);
+  ctx.beginPath(); ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y); ctx.lineTo(fl_tr.x, fl_tr.y); ctx.lineTo(fl_tl.x, fl_tl.y); ctx.closePath();
+  ctx.fillStyle = topC; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.6; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(fl_tl.x, fl_tl.y); ctx.lineTo(fl_tr.x, fl_tr.y); ctx.lineTo(fl_br.x, fl_br.y); ctx.lineTo(fl_bl.x, fl_bl.y); ctx.closePath();
+  ctx.fillStyle = leftC; ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tr.x, tr.y); ctx.lineTo(fl_tr.x, fl_tr.y); ctx.lineTo(fl_br.x, fl_br.y); ctx.lineTo(br.x, br.y); ctx.closePath();
+  ctx.fillStyle = rightC; ctx.fill(); ctx.stroke();
+}
+// Ink-outlined helpers (manga look)
+function inkEllipse(x, y, w, h, fill, ink = '#10070a', lw = 2.4) {
+  ctx.beginPath(); ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2);
+  ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = ink; ctx.stroke();
+}
+function inkRoundRect(x, y, w, h, r, fill, ink = '#10070a', lw = 2.4) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill();
+  ctx.lineWidth = lw; ctx.strokeStyle = ink; ctx.stroke();
+}
+
+// ══════════════════════════════════════════════════════════════
+// BIOMES
+// ══════════════════════════════════════════════════════════════
+// Each biome: center gx, sky[top,mid,low], name, ground palette fn, particle type
+const BIOMES = [
+  { c: 5,  name: 'Forêt de Konoha', sky: [[52,128,196],[174,224,255],[210,242,214]], part: 'petal' },
+  { c: 15, name: 'Village de Konoha', sky: [[58,140,200],[230,200,150],[255,220,170]], part: 'petal' },
+  { c: 28, name: 'Grand Bleu — One Piece', sky: [[24,110,190],[110,190,240],[190,236,255]], part: 'spray' },
+  { c: 40, name: 'Forêt du Pourfendeur', sky: [[10,16,46],[26,42,74],[12,30,34]], part: 'firefly' },
+  { c: 51, name: 'Arène du Duel', sky: [[26,10,58],[58,26,106],[14,8,40]], part: 'holo' },
+  { c: 62, name: 'Cratère Saiyan', sky: [[58,26,12],[138,58,26],[26,10,6]], part: 'ember' },
+  { c: 73, name: 'Cité de Death Note', sky: [[10,14,26],[26,34,52],[6,10,16]], part: 'rain' },
+  { c: 83, name: 'Terres du Hokuto', sky: [[42,10,10],[106,28,28],[26,8,8]], part: 'ash' },
+  { c: 92, name: 'Prairie Pokémon', sky: [[90,176,224],[170,224,255],[200,236,170]], part: 'leaf' },
+  { c: 99, name: 'Bosquet du Sage', sky: [[26,12,42],[74,42,122],[12,6,28]], part: 'spirit' },
+];
+function lerp(a, b, t) { return a + (b - a) * t; }
+function biomeColorsAt(gx) {
+  if (gx <= BIOMES[0].c) return BIOMES[0].sky;
+  if (gx >= BIOMES[BIOMES.length - 1].c) return BIOMES[BIOMES.length - 1].sky;
+  let i = 0; while (i < BIOMES.length - 1 && BIOMES[i + 1].c < gx) i++;
+  const a = BIOMES[i], b = BIOMES[i + 1], t = (gx - a.c) / (b.c - a.c);
+  return [0,1,2].map(j => [0,1,2].map(k => Math.round(lerp(a.sky[j][k], b.sky[j][k], t))));
+}
+function biomeNameAt(gx) {
+  let nearest = BIOMES[0], best = 1e9;
+  for (const b of BIOMES) { const d = Math.abs(b.c - gx); if (d < best) { best = d; nearest = b; } }
+  return nearest;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PLAYER
+// ══════════════════════════════════════════════════════════════
+const player = { gx: 2, gy: 3.5, speed: 0.095, bobPhase: 0, facing: 1 };
+const keys = {};
+let nearZone = null, frame = 0;
+
+window.addEventListener('keydown', e => {
+  if (dialogOpen) return; keys[e.key] = true;
+  if ((e.key === 'e' || e.key === 'E') && nearZone) triggerZone(nearZone);
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function mkZone(id, gx, label, unlockedWhen, action) { return { id, gx, gy: 3, r: 2.7, label, locked: unlockedWhen, action }; }
+
+const zones = [
+  mkZone('porte', 5, 'Pousser la porte', () => false, () => {
+    if (gameProgress.porteOuverte) return showDialog('Garde de Konoha', '"La porte est déjà ouverte. Entre, voyageur."');
+    showDialog('Garde de Konoha', '"Étranger ! Cette porte est verrouillée. Pour entrer dans le village, pousse-la de ta propre force — avec ta main, face à la caméra !"', [
+      { label: 'Pousser avec la caméra', cls: 'highlight', action: () => ouvrirInteraction('interactions/porte-konoha.html', 'porte') },
+      { label: 'Plus tard', action: () => {} }]);
+  }),
+  mkZone('naruto', 15, 'Apprendre le Jutsu', () => !gameProgress.porteOuverte, () => {
+    if (gameProgress.jutsuFait) return showDialog('Naruto', '"Tu maîtrises déjà le jutsu, dattebayo ! File vers la mer !"');
+    showDialog('Naruto', '"Hé toi ! Pour devenir ninja, reproduis la séquence de mudras puis invoque tes clones, dattebayo !"', [
+      { label: 'Tenter le Jutsu', cls: 'highlight', action: () => ouvrirInteraction('interactions/naruto-jutsu.html', 'naruto') },
+      { label: 'Pas maintenant', action: () => {} }]);
+  }),
+  mkZone('onepiece', 28, 'Gomu Gomu no...', () => !gameProgress.jutsuFait, () => {
+    if (gameProgress.onepieceFait) return showDialog('Luffy', '"Shishishi ! T\'as déjà mis les Marines KO ! Continue !"');
+    showDialog('Luffy', '"Ces Marines bloquent le ponton ! Étire ton bras et frappe-les : recule pour que la caméra te voie en entier, puis envoie un grand coup de poing !"', [
+      { label: 'Lancer le Gomu Gomu', cls: 'highlight', action: () => ouvrirInteraction('interactions/one-piece.html', 'onepiece') },
+      { label: 'Plus tard', action: () => {} }]);
+  }),
+  mkZone('demonslayer', 40, 'Souffle de l\'Eau', () => !gameProgress.onepieceFait, () => {
+    if (gameProgress.demonFait) return showDialog('Tanjiro', '"Les démons sont vaincus. La voie est libre."');
+    showDialog('Tanjiro', '"Des démons rôdent dans la forêt de bambous. Concentration totale — Souffle de l\'Eau ! Tranche-les d\'un geste vif de la main dans la bonne direction !"', [
+      { label: 'Dégainer le katana', cls: 'highlight', action: () => ouvrirInteraction('interactions/demon-slayer.html', 'demonslayer') },
+      { label: 'Reprendre mon souffle', action: () => {} }]);
+  }),
+  mkZone('yugioh', 51, 'Duel de Janken', () => !gameProgress.demonFait, () => {
+    if (gameProgress.yugiohFait) return showDialog('Le Pharaon', '"Tu as remporté le duel. Le cœur des cartes t\'accompagne."');
+    showDialog('Le Pharaon', '"Pour franchir l\'arène, affronte-moi à Janken ! Pierre, feuille ou ciseaux — montre ta main à la caméra. Premier à 2 victoires l\'emporte !"', [
+      { label: 'It\'s time to DUEL', cls: 'highlight', action: () => ouvrirInteraction('interactions/yu-gi-oh.html', 'yugioh') },
+      { label: 'Pas prêt', action: () => {} }]);
+  }),
+  mkZone('saiyan', 62, 'Briser le rocher', () => !gameProgress.yugiohFait, () => {
+    if (gameProgress.saiyanFait) return showDialog('Maître Saiyan', '"Ton aura est intacte. Avance, guerrier."');
+    showDialog('Maître Saiyan', '"Ce rocher scellé bloque tout. Seul un Super Saiyan le pulvérise : crie ou clique frénétiquement pour libérer ton énergie !"', [
+      { label: 'Devenir Super Saiyan', cls: 'highlight', action: () => ouvrirInteraction('interactions/super-saiyan.html', 'saiyan') },
+      { label: 'Pas encore', action: () => {} }]);
+  }),
+  mkZone('deathnote', 73, 'Écrire dans le carnet', () => !gameProgress.saiyanFait, () => {
+    if (gameProgress.deathnoteFait) return showDialog('Ryuk', '"Hyuk hyuk... le nom est déjà écrit. Passe."');
+    showDialog('Ryuk', '"Hyuk hyuk... Ce carnet est tombé du ciel. Écris le nom dans le Death Note en traçant chaque lettre avec ton index en l\'air, face à la caméra..."', [
+      { label: 'Saisir le stylo', cls: 'danger', action: () => ouvrirInteraction('interactions/death-note.html', 'deathnote') },
+      { label: 'Refuser', action: () => { showDialog('Ryuk', '"Une pomme alors ? Hyuk hyuk."'); } }]);
+  }),
+  mkZone('hokuto', 83, 'Tracer la Grande Ourse', () => !gameProgress.deathnoteFait, () => {
+    if (gameProgress.hokutoFait) return showDialog('Kenshiro', '"La constellation t\'a reconnu. Avance."');
+    showDialog('Kenshiro', '"Prouve que tu connais la Voie du Hokuto : reproduis la Grande Ourse dans le ciel !"', [
+      { label: 'Tracer la constellation', cls: 'highlight', action: () => ouvrirInteraction('interactions/grande-ourse.html', 'hokuto') },
+      { label: 'Plus tard', action: () => {} }]);
+  }),
+  mkZone('pokemon', 92, 'Capturer le Pokémon', () => !gameProgress.hokutoFait, () => {
+    if (gameProgress.pokemonFait) return showDialog('Dresseur', '"Beau lancer ! Le Sage t\'attend juste après."');
+    showDialog('Dresseur', '"Un Pokémon sauvage gambade dans les hautes herbes ! Vise bien, attends le bon moment et lance ta Pokéball !"', [
+      { label: 'Lancer la Pokéball', cls: 'highlight', action: () => ouvrirInteraction('interactions/pokemon.html', 'pokemon') },
+      { label: 'Plus tard', action: () => {} }]);
+  }),
+  mkZone('sage', 99, 'Livrer le colis', () => !gameProgress.pokemonFait, () => {
+    if (gameProgress.colisLivre) return showDialog('Le Sage', '"Quête accomplie. Tu as conquis la Planète Manga !"');
+    showDialog('Le Sage', '"Te voilà enfin, à travers dix mondes ! Pose le colis... et reçois le cristal légendaire de la Planète Manga."', [
+      { label: 'Livrer le colis', cls: 'highlight', action: () => {
+        gameProgress.colisLivre = true; addCrystals(1); setMission('Quête accomplie !'); refreshProgress();
+        if(window.SpaceCrystals)SpaceCrystals.complete('manga');
+        showDialog('Le Sage', '"Merci, héros ! La Planète Manga est conquise. Que ton voyage continue de planète en planète !"');
+      }},
+      { label: 'Attendre', action: () => {} }]);
+  }),
+];
+function triggerZone(z) { if (typeof MangaAudio !== 'undefined') MangaAudio.sfx.zone(); z.action(); }
+
+// gating: how far right can the player walk
+function currentMaxX() {
+  if (!gameProgress.porteOuverte) return 6;
+  if (!gameProgress.jutsuFait) return 17;
+  if (!gameProgress.onepieceFait) return 30;
+  if (!gameProgress.demonFait) return 42;
+  if (!gameProgress.yugiohFait) return 53;
+  if (!gameProgress.saiyanFait) return 64;
+  if (!gameProgress.deathnoteFait) return 75;
+  if (!gameProgress.hokutoFait) return 85;
+  if (!gameProgress.pokemonFait) return 94;
+  return COLS - 2;
+}
+
+function updatePlayer() {
+  if (dialogOpen) return;
+  const s = player.speed; let dx = 0, dy = 0;
+  if (keys['ArrowLeft'] || keys['a'] || keys['q']) { dx -= s; player.facing = -1; }
+  if (keys['ArrowRight'] || keys['d']) { dx += s; player.facing = 1; }
+  if (keys['ArrowUp'] || keys['w'] || keys['z']) dy -= s * 0.6;
+  if (keys['ArrowDown'] || keys['s']) dy += s * 0.6;
+  player.gx = Math.max(1, Math.min(currentMaxX(), player.gx + dx));
+  player.gy = Math.max(0.5, Math.min(ROWS - 1, player.gy + dy));
+  if (dx !== 0 || dy !== 0) {
+    const prevBob = player.bobPhase; player.bobPhase += 0.22;
+    if (Math.floor(prevBob / Math.PI) !== Math.floor(player.bobPhase / Math.PI) && typeof MangaAudio !== 'undefined') MangaAudio.sfx.step();
+  }
+
+  const screenX = (player.gx * TW + player.gy * TW * 0.5);
+  const effectiveW = window.innerWidth;
+  const margin = effectiveW * 0.45;
+  if (screenX - camX > effectiveW - margin) camX = Math.min(COLS * TW * 1.1, camX + ((screenX - camX) - (effectiveW - margin)) * 0.1);
+  if (screenX - camX < margin) camX = Math.max(0, camX - (margin - (screenX - camX)) * 0.1);
+
+  nearZone = null;
+  for (const z of zones) { if (z.locked()) continue; const a = player.gx - z.gx, b = player.gy - z.gy; if (Math.sqrt(a*a+b*b) < z.r) { nearZone = z; break; } }
+
+  // biome tag
+  const bn = biomeNameAt(player.gx).name;
+  const tag = document.getElementById('biome-tag');
+  if (tag.textContent !== bn) tag.textContent = bn;
+}
+
+// ══════════════════════════════════════════════════════════════
+// SKY + PARALLAX
+// ══════════════════════════════════════════════════════════════
+let neonT = 0;
+function drawSky() {
+  const cols = biomeColorsAt(player.gx);
+  const g = ctx.createLinearGradient(0, 0, 0, C.height);
+  g.addColorStop(0, `rgb(${cols[0][0]},${cols[0][1]},${cols[0][2]})`);
+  g.addColorStop(0.55, `rgb(${cols[1][0]},${cols[1][1]},${cols[1][2]})`);
+  g.addColorStop(1, `rgb(${cols[2][0]},${cols[2][1]},${cols[2][2]})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, C.width, C.height);
+
+  // Sun/Moon depending on biome darkness
+  const dark = (cols[0][0] + cols[0][1] + cols[0][2]) < 260;
+  const orbX = C.width * 0.72 - camX * 0.04, orbY = C.height * 0.22;
+  ctx.save();
+  ctx.shadowColor = dark ? '#cfd6ff' : '#fff3c0'; ctx.shadowBlur = 60;
+  ctx.fillStyle = dark ? '#e8ecff' : '#fff6d0';
+  ctx.beginPath(); ctx.arc(orbX, orbY, dark ? 36 : 46, 0, Math.PI * 2); ctx.fill();
+  if (dark) { ctx.fillStyle = `rgb(${cols[0][0]},${cols[0][1]},${cols[0][2]})`; ctx.beginPath(); ctx.arc(orbX + 14, orbY - 6, 30, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+
+  // Stars in dark biomes
+  if (dark) {
+    for (let i = 0; i < 90; i++) {
+      const sx = (i * 149 - camX * 0.15) % (C.width + 100); const sy = (i * 71) % (C.height * 0.5);
+      ctx.fillStyle = `rgba(255,250,235,${0.3 + 0.4 * Math.sin(neonT * 2 + i)})`;
+      ctx.fillRect(sx < 0 ? sx + C.width + 100 : sx, sy, 2, 2);
+    }
+  }
+  drawParallax();
+}
+
+// Far parallax silhouette props placed in world space
+const FAR_PROPS = [
+  { gx: 8,  type: 'hokage' }, { gx: 26, type: 'ship' }, { gx: 40, type: 'bamboo' },
+  { gx: 51, type: 'tower' }, { gx: 62, type: 'planet' }, { gx: 73, type: 'city' },
+  { gx: 83, type: 'statue' }, { gx: 92, type: 'hills' }, { gx: 99, type: 'tree' },
+];
+function drawParallax() {
+  // Distant hill band
+  ctx.save();
+  ctx.globalAlpha = 0.35; ctx.fillStyle = '#000';
+  for (const p of FAR_PROPS) {
+    const x = C.width * 0.14 + p.gx * TW * 0.5 - camX * 0.45;
+    const baseY = C.height * 0.5;
+    if (x < -260 || x > C.width + 260) continue;
+    ctx.save(); ctx.translate(x, baseY); drawFarProp(p.type); ctx.restore();
+  }
+  ctx.restore();
+}
+function drawFarProp(type) {
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  switch (type) {
+    case 'hokage':
+      ctx.beginPath(); ctx.moveTo(-180, 40); ctx.lineTo(-120, -120); ctx.lineTo(-40, -150); ctx.lineTo(60, -110); ctx.lineTo(180, 40); ctx.closePath(); ctx.fill();
+      // faces hint
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(-110 + i * 60, -70, 16, 0, Math.PI * 2); ctx.fill(); }
+      break;
+    case 'ship':
+      ctx.fillRect(-90, -10, 180, 50); ctx.beginPath(); ctx.moveTo(-90,-10); ctx.lineTo(-120,40); ctx.lineTo(120,40); ctx.lineTo(90,-10); ctx.closePath(); ctx.fill();
+      ctx.fillRect(-6, -150, 12, 140);
+      ctx.beginPath(); ctx.moveTo(0,-150); ctx.lineTo(80,-60); ctx.lineTo(0,-60); ctx.closePath(); ctx.fill();
+      break;
+    case 'bamboo':
+      for (let i = -3; i <= 3; i++) { ctx.fillRect(i * 34 - 4, -260, 8, 300); }
+      break;
+    case 'tower':
+      ctx.beginPath(); ctx.moveTo(-50,40); ctx.lineTo(-12,-220); ctx.lineTo(12,-220); ctx.lineTo(50,40); ctx.closePath(); ctx.fill();
+      break;
+    case 'planet':
+      ctx.beginPath(); ctx.arc(0, -150, 80, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(0, -150, 130, 30, -0.3, 0, Math.PI * 2); ctx.stroke();
+      break;
+    case 'city':
+      for (let i = -4; i <= 4; i++) { const h = 100 + (i * 53 % 140); ctx.fillRect(i * 40 - 16, 40 - h, 32, h); }
+      break;
+    case 'statue':
+      ctx.fillRect(-30, -200, 60, 240); ctx.beginPath(); ctx.arc(0, -210, 36, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 'hills':
+      ctx.beginPath(); ctx.moveTo(-220, 40); ctx.quadraticCurveTo(-80, -70, 60, 40); ctx.quadraticCurveTo(160, -40, 240, 40); ctx.closePath(); ctx.fill();
+      break;
+    case 'tree':
+      ctx.fillRect(-12, -120, 24, 160); ctx.beginPath(); ctx.arc(0, -150, 80, 0, Math.PI * 2); ctx.fill();
+      break;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// FLOOR (per biome)
+// ══════════════════════════════════════════════════════════════
+function floorColor(gx, gy) {
+  const alt = (gx + gy) % 2;
+  if (gx <= 8)  return alt ? '#274a1c' : '#1f3a16';                                  // konoha forest
+  if (gx <= 21) return alt ? '#5a3e22' : '#4a3018';                                  // konoha village
+  if (gx <= 33) {                                                                    // sea
+    const w = Math.sin(frame * 0.05 + gx * 0.5 + gy * 0.7) * 0.5 + 0.5;
+    return `rgb(${20 + w * 30},${90 + w * 60},${150 + w * 60})`;
+  }
+  if (gx <= 45) return alt ? '#10221f' : '#0c1a1a';                                  // demon forest
+  if (gx <= 56) {                                                                    // arena holo
+    const w = Math.sin(frame * 0.06 + gx * 0.6) * 0.5 + 0.5;
+    return alt ? `rgb(${40 + w * 30},${10},${70 + w * 40})` : `rgb(${20},${5},${50 + w * 30})`;
+  }
+  if (gx <= 67) {                                                                    // saiyan crater
+    const b = gameProgress.saiyanFait ? Math.sin(frame * 0.05 + gx) * 0.1 + 0.1 : 0;
+    return `rgb(${60 + b * 90},${36 + b * 30},${28})`;
+  }
+  if (gx <= 78) return alt ? '#161a26' : '#10131d';                                  // death note city
+  if (gx <= 88) return alt ? '#4d2818' : '#3d1f12';                                  // hokuto waste
+  if (gx <= 96) return alt ? '#3a7a28' : '#2e6420';                                  // pokemon grass
+  const w = Math.sin(frame * 0.04 + gx * 0.3 + gy * 0.6) * 0.5 + 0.5;                // sage grove
+  return `rgb(${40 + w * 20},${24 + w * 14},${58 + w * 24})`;
+}
+function drawFloor() {
+  for (let gy = 0; gy < ROWS; gy++)
+    for (let gx = 0; gx < COLS; gx++) {
+      const p = iso(gx, gy);
+      if (p.x < -TW * 2 || p.x > C.width + TW * 2) continue;
+      topFace(gx, gy, 0, floorColor(gx, gy));
+    }
+}
+
+// Walls only around Konoha
+function drawWalls() {
+  neonT += 0.02;
+  for (let gx = 0; gx < COLS; gx++) {
+    if (gx >= 4 && gx <= 6) continue;
+    const wallH = (gx <= 8) ? 6 : (gx <= 21 ? 5 : 0);
+    if (wallH === 0) continue;
+    const p0 = iso(gx, 0, 0), p1 = iso(gx + 1, 0, 0);
+    if (p0.x < -TW * 2 || p0.x > C.width + TW * 2) continue;
+    const pt0 = iso(gx, 0, wallH), pt1 = iso(gx + 1, 0, wallH);
+    ctx.beginPath(); ctx.moveTo(pt0.x, pt0.y); ctx.lineTo(pt1.x, pt1.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p0.x, p0.y); ctx.closePath();
+    ctx.fillStyle = gx <= 8 ? '#2a1b0d' : '#3d2818'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.3; ctx.stroke();
+  }
+  for (let gy = 0; gy < ROWS; gy++) {
+    const p0 = iso(0, gy, 0), p1 = iso(0, gy + 1, 0); const pt0 = iso(0, gy, 6), pt1 = iso(0, gy + 1, 6);
+    ctx.beginPath(); ctx.moveTo(pt0.x, pt0.y); ctx.lineTo(pt1.x, pt1.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p0.x, p0.y); ctx.closePath();
+    ctx.fillStyle = '#1a1208'; ctx.fill();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// DECORATIONS PER BIOME
+// ══════════════════════════════════════════════════════════════
+function visible(gx) { const p = iso(gx, 3); return p.x > -300 && p.x < C.width + 300; }
+
+function drawKonohaGate() {
+  box(4, 0, 0, 0.6, 1.2, 7, '#a83c1a', '#7a2a10', '#5a1d08');
+  box(6.4, 0, 0, 0.6, 1.2, 7, '#a83c1a', '#7a2a10', '#5a1d08');
+  box(4, 0, 6.5, 3, 1.2, 0.6, '#7a2a10', '#5a1d08', '#3a1206');
+  const sp = iso(5.2, 0.3, 7.2);
+  ctx.save(); ctx.fillStyle = '#2d8f3a'; ctx.shadowColor = '#2d8f3a'; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(sp.x, sp.y, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e8d6a0'; ctx.font = 'bold 18px serif'; ctx.textAlign = 'center'; ctx.fillText('木', sp.x, sp.y + 6); ctx.restore();
+  if (!gameProgress.porteOuverte) {
+    // Double wooden doors filling the gate opening
+    const bl = iso(4.6, 0, 0), br = iso(6.4, 0, 0), tr = iso(6.4, 0, 6), tl = iso(4.6, 0, 6);
+    ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y); ctx.lineTo(tr.x, tr.y); ctx.lineTo(tl.x, tl.y); ctx.closePath();
+    ctx.fillStyle = '#5a3818'; ctx.fill(); ctx.strokeStyle = '#3a2210'; ctx.lineWidth = 2.5; ctx.stroke();
+    // planks
+    ctx.strokeStyle = 'rgba(40,24,10,0.7)'; ctx.lineWidth = 1.2;
+    for (let k = 1; k < 4; k++) { const a = iso(4.6 + k * 0.45, 0, 0), b = iso(4.6 + k * 0.45, 0, 6); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+    // central seam
+    const cs0 = iso(5.5, 0, 0), cs1 = iso(5.5, 0, 6); ctx.strokeStyle = '#2a1808'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cs0.x, cs0.y); ctx.lineTo(cs1.x, cs1.y); ctx.stroke();
+    // iron rings
+    ctx.fillStyle = '#1a1206'; const r1 = iso(5.2, 0, 2.6), r2 = iso(5.8, 0, 2.6);
+    ctx.beginPath(); ctx.arc(r1.x, r1.y, 4, 0, Math.PI * 2); ctx.arc(r2.x, r2.y, 4, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 35; ctx.strokeStyle = 'rgba(255,215,0,0.4)'; ctx.lineWidth = 3;
+    const op = iso(5.5, 0, 3); ctx.strokeRect(op.x - 25, op.y - 60, 50, 60); ctx.restore();
+  }
+}
+function drawKonohaVillage() {
+  box(11, 4, 0, 2, 2, 2, '#b86b3a', '#8a4a25', '#6a3618'); box(11, 4, 2, 2, 2, 1.2, '#c41e3a', '#8a1428', '#5a0a18');
+  box(17, 5, 0, 2.5, 1.5, 2.5, '#b86b3a', '#8a4a25', '#6a3618'); box(17, 5, 2.5, 2.5, 1.5, 1.2, '#c41e3a', '#8a1428', '#5a0a18');
+  for (const lx of [10, 19]) {
+    box(lx, 1, 0, 0.2, 0.2, 2.5, '#3a2210', '#2a1808', '#1a1004');
+    const lp = iso(lx + 0.1, 1.1, 2.8); ctx.save();
+    const fl = 0.7 + 0.3 * Math.sin(neonT * 6 + lx); ctx.shadowColor = '#ff8c1a'; ctx.shadowBlur = 18 * fl;
+    ctx.fillStyle = `rgba(255,140,26,${fl})`; ctx.beginPath(); ctx.ellipse(lp.x, lp.y, 8, 12, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+  // training post (naruto)
+  box(15, 2.6, 0, 0.4, 0.4, 2.5, '#3a2210', '#2a1808', '#1a1004');
+}
+function drawSeaZone() {
+  // Dock
+  box(24, 1, 0, 8, 0.4, 0.3, '#6a4a2a', '#4a3018', '#3a2410');
+  // Going Merry-ish boat
+  box(27, 4.5, 0, 3, 1.4, 1, '#caa14a', '#9a7a30', '#7a5a20');
+  box(28.2, 5, 1, 0.3, 0.3, 2.2, '#6a4a2a', '#4a3018', '#3a2410');
+  const sail = iso(28.3, 5.1, 3.2); ctx.save(); ctx.fillStyle = '#f0e6cf'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(sail.x - 26, sail.y - 50, 52, 50, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#c41e3a'; ctx.beginPath(); ctx.arc(sail.x, sail.y - 25, 11, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  // Marine barrels (cleared when done)
+  if (!gameProgress.onepieceFait) { box(30, 2.6, 0, 0.8, 0.8, 1, '#3a5a8a', '#26406a', '#1a2e4a'); box(31, 4, 0, 0.8, 0.8, 1, '#3a5a8a', '#26406a', '#1a2e4a'); }
+}
+function drawDemonForest() {
+  for (const bx of [35, 37.5, 43, 45]) {
+    box(bx, 1 + (bx % 2), 0, 0.3, 0.3, 4 + (bx % 3), '#1a5a3a', '#0e3a24', '#082a18');
+  }
+  // Wisteria / shrine torii
+  box(39, 5.5, 0, 0.3, 0.3, 3, '#7a1a2a', '#5a1020', '#3a0a16'); box(41.5, 5.5, 0, 0.3, 0.3, 3, '#7a1a2a', '#5a1020', '#3a0a16');
+  box(39, 5.5, 3, 2.8, 0.3, 0.4, '#9a2438', '#7a1a2a', '#5a1020');
+}
+function drawArena() {
+  // holographic duel platform
+  box(48, 1.5, 0, 6, 3, 0.6, '#2a1050', '#1a0838', '#120628');
+  const ap = iso(51, 3, 0.7); ctx.save();
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = `rgba(157,78,221,${0.5 - i * 0.12 + 0.2 * Math.sin(neonT * 3 + i)})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(ap.x, ap.y, 50 + i * 24, 22 + i * 10, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  // floating card holograms
+  for (let i = 0; i < 3; i++) {
+    const cp = iso(49.5 + i * 1.5, 2, 2.6 + Math.sin(neonT * 2 + i) * 0.3);
+    ctx.save(); ctx.shadowColor = '#9d4edd'; ctx.shadowBlur = 14;
+    ctx.fillStyle = 'rgba(120,60,180,0.7)'; ctx.strokeStyle = '#d6b3ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(cp.x - 12, cp.y - 18, 24, 34, 3); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  ctx.restore();
+}
+function drawSealedRock() {
+  if (!gameProgress.saiyanFait) {
+    box(58, 1.5, 0, 1.5, 3, 4, '#5a4a3a', '#3a2a1c', '#2a1c10');
+    const sp = iso(58.7, 1.5, 3); ctx.save(); ctx.fillStyle = '#f5e6c0'; ctx.fillRect(sp.x - 12, sp.y - 30, 24, 50);
+    ctx.fillStyle = '#c41e3a'; ctx.font = 'bold 14px serif'; ctx.textAlign = 'center'; ctx.fillText('封', sp.x, sp.y - 12); ctx.fillText('印', sp.x, sp.y + 4); ctx.restore();
+  } else {
+    box(58, 4, 0, 0.5, 0.5, 0.5, '#3a2a1c', '#2a1c10', '#1a1004'); box(59, 5, 0, 0.4, 0.4, 0.4, '#3a2a1c', '#2a1c10', '#1a1004');
+  }
+}
+function drawSaiyanZone() {
+  box(60, 1, 0, 1, 1, 1.5, '#3a2a1c', '#2a1c10', '#1a1004'); box(64, 5, 0, 1, 1, 1, '#3a2a1c', '#2a1c10', '#1a1004');
+  const pp = iso(61, 3, 0.5); ctx.save(); ctx.fillStyle = '#1a1a2a'; ctx.beginPath(); ctx.ellipse(pp.x, pp.y, 34, 26, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4a90e2'; ctx.shadowColor = '#4a90e2'; ctx.shadowBlur = 12; ctx.beginPath(); ctx.arc(pp.x, pp.y - 8, 11, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  if (gameProgress.saiyanFait) {
+    const ap = iso(61, 3, 0); ctx.save(); ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 30; ctx.strokeStyle = `rgba(255,215,0,${0.4 + 0.3 * Math.sin(neonT * 3)})`; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(ap.x, ap.y, 40 + i * 12, 20 + i * 6, 0, 0, Math.PI * 2); ctx.stroke(); } ctx.restore();
+  }
+}
+function drawDeathNoteCity() {
+  for (const bx of [69, 71, 76, 78]) {
+    const h = 3 + (bx % 3); box(bx, 1 + (bx % 2) * 3.5, 0, 1.2, 1, h, '#1a2233', '#0e1622', '#080e16');
+    // lit windows
+    const wp = iso(bx + 0.2, 1 + (bx % 2) * 3.5, h * 0.5); ctx.save(); ctx.fillStyle = `rgba(255,210,120,${0.4 + 0.4 * Math.sin(neonT * 4 + bx)})`;
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 2; c++) ctx.fillRect(wp.x - 6 + c * 8, wp.y - 18 + r * 12, 4, 6); ctx.restore();
+  }
+  // apple on a pedestal
+  box(73, 4.5, 0, 0.4, 0.4, 0.6, '#2a2a33', '#1a1a22', '#101016');
+  const apl = iso(73.2, 4.7, 0.7); ctx.save(); ctx.fillStyle = '#c41e3a'; ctx.shadowColor = '#c41e3a'; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(apl.x, apl.y - 6, 6, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function drawHokutoZone() {
+  box(80, 1, 0, 0.8, 0.8, 3, '#3a1f12', '#2a1408', '#1a0a04'); box(86, 5, 0, 0.9, 0.9, 3.2, '#3a1f12', '#2a1408', '#1a0a04');
+  box(83, 3, 0, 1.6, 1.2, 0.8, '#5a3020', '#3a1f12', '#2a1408');
+  const ap = iso(83.8, 3.6, 0.8); ctx.save(); ctx.shadowColor = '#c41e3a'; ctx.shadowBlur = 15; ctx.fillStyle = '#c41e3a';
+  const dipper = [[-22,-2],[-12,-4],[-2,0],[8,4],[18,2],[14,-12],[24,-14]];
+  for (const [dx, dy] of dipper) { ctx.beginPath(); ctx.arc(ap.x + dx, ap.y + dy, 3, 0, Math.PI * 2); ctx.fill(); } ctx.restore();
+}
+function drawPokemonZone() {
+  // tall grass tufts
+  ctx.save(); ctx.strokeStyle = '#2e6420'; ctx.lineWidth = 3;
+  for (let i = 0; i < 14; i++) {
+    const gx = 89 + (i % 7) * 1.1, gy = 1 + (i % 5); const p = iso(gx, gy);
+    if (p.x < -100 || p.x > C.width + 100) continue;
+    const sway = Math.sin(neonT * 2 + i) * 4;
+    ctx.strokeStyle = (i % 2) ? '#3a8a28' : '#2e6420';
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.quadraticCurveTo(p.x + sway, p.y - 22, p.x + sway * 1.5, p.y - 34); ctx.stroke();
+  }
+  ctx.restore();
+  // pokeball marker
+  const bp = iso(92, 1.5, 0.4); ctx.save(); ctx.translate(bp.x, bp.y); ctx.shadowColor = '#ff3b3b'; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(0, 0, 12, Math.PI, 0); ctx.fillStyle = '#e63b3b'; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI); ctx.fillStyle = '#f5f5f5'; ctx.fill();
+  ctx.fillStyle = '#222'; ctx.fillRect(-12, -2, 24, 4); ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+}
+function drawSageGrove() {
+  box(98, 3, 0, 0.5, 0.5, 3, '#3a2818', '#2a1c0c', '#1a1004');
+  const tp = iso(98.25, 3.25, 3); ctx.save(); ctx.shadowColor = '#9d4edd'; ctx.shadowBlur = 25; ctx.fillStyle = '#5a2d8c';
+  ctx.beginPath(); ctx.arc(tp.x, tp.y, 30, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#9d4edd';
+  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + neonT; ctx.beginPath(); ctx.arc(tp.x + Math.cos(a) * 22, tp.y + Math.sin(a) * 22, 4, 0, Math.PI * 2); ctx.fill(); } ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CHARACTERS (manga ink style)
+// ══════════════════════════════════════════════════════════════
+function shadow(p) { ctx.beginPath(); ctx.ellipse(p.x, p.y + 4, 15, 6, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fill(); }
+
+function drawNinja(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.05) * 2; shadow(p);
+  inkRoundRect(p.x - 7, p.y - 22 + bob, 6, 22, 2, '#8b7355'); inkRoundRect(p.x + 1, p.y - 22 + bob, 6, 22, 2, '#8b7355');
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 30, 4, '#2d8f3a');
+  inkEllipse(p.x, p.y - 60 + bob, 9, 10, '#f4c28a');
+  ctx.fillStyle = '#444'; ctx.fillRect(p.x - 10, p.y - 66 + bob, 20, 4);
+  ctx.fillStyle = '#1a0e08'; ctx.beginPath(); ctx.ellipse(p.x, p.y - 70 + bob, 9, 5, 0, Math.PI, true); ctx.fill();
+}
+function drawNaruto(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.1) * 3; shadow(p);
+  inkRoundRect(p.x - 7, p.y - 22 + bob, 6, 22, 2, '#1a1a3a'); inkRoundRect(p.x + 1, p.y - 22 + bob, 6, 22, 2, '#1a1a3a');
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 30, 4, '#ff8c1a');
+  inkEllipse(p.x, p.y - 60 + bob, 9, 10, '#f4c28a');
+  ctx.strokeStyle = '#5a3818'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(p.x-9,p.y-57+bob); ctx.lineTo(p.x-4,p.y-56+bob); ctx.moveTo(p.x+4,p.y-57+bob); ctx.lineTo(p.x+9,p.y-56+bob); ctx.stroke();
+  ctx.fillStyle = '#f5d65a'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 1.6; ctx.beginPath();
+  ctx.moveTo(p.x - 10, p.y - 64 + bob); for (let i = 0; i < 7; i++) { const x = p.x - 10 + i * 3; ctx.lineTo(x + 1.5, p.y - 76 + bob - (i % 2) * 2); ctx.lineTo(x + 3, p.y - 64 + bob); } ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#444'; ctx.fillRect(p.x - 10, p.y - 66 + bob, 20, 3.5);
+}
+function drawLuffy(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.09) * 3; shadow(p);
+  inkRoundRect(p.x - 7, p.y - 22 + bob, 6, 22, 2, '#2a4a8a'); inkRoundRect(p.x + 1, p.y - 22 + bob, 6, 22, 2, '#2a4a8a');
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 30, 4, '#c41e3a');
+  inkEllipse(p.x, p.y - 60 + bob, 9, 10, '#f4c28a');
+  ctx.fillStyle = '#1a0e08'; ctx.beginPath(); ctx.ellipse(p.x, p.y - 67 + bob, 10, 6, 0, Math.PI, true); ctx.fill();
+  // straw hat
+  ctx.fillStyle = '#e8c64a'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(p.x, p.y - 70 + bob, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(p.x, p.y - 74 + bob, 8, 5, 0, Math.PI, true); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#c41e3a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(p.x, p.y - 70 + bob, 8, 3, 0, 0, Math.PI); ctx.stroke();
+}
+function drawTanjiro(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.05) * 2; shadow(p);
+  inkRoundRect(p.x - 7, p.y - 22 + bob, 6, 22, 2, '#1a1a22'); inkRoundRect(p.x + 1, p.y - 22 + bob, 6, 22, 2, '#1a1a22');
+  // checkered haori
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 30, 4, '#1a3a3a');
+  ctx.fillStyle = '#0e2424'; for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) if ((r + c) % 2) ctx.fillRect(p.x - 12 + c * 6, p.y - 50 + bob + r * 7, 6, 7);
+  inkEllipse(p.x, p.y - 60 + bob, 9, 10, '#f0c098');
+  // scar
+  ctx.strokeStyle = '#c41e3a'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(p.x + 4, p.y - 66 + bob); ctx.lineTo(p.x + 6, p.y - 58 + bob); ctx.stroke();
+  ctx.fillStyle = '#3a1a14'; ctx.beginPath(); ctx.ellipse(p.x, p.y - 67 + bob, 10, 6, 0, Math.PI, true); ctx.fill();
+}
+function drawPharaoh(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.06) * 2; shadow(p);
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 50, 4, '#2a2a4a');
+  // millennium puzzle
+  ctx.fillStyle = '#e8c64a'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(p.x, p.y - 30 + bob); ctx.lineTo(p.x - 7, p.y - 38 + bob); ctx.lineTo(p.x + 7, p.y - 38 + bob); ctx.closePath(); ctx.fill(); ctx.stroke();
+  inkEllipse(p.x, p.y - 60 + bob, 9, 10, '#f0c8a0');
+  // tri-color star hair
+  ctx.fillStyle = '#1a1a3a'; ctx.beginPath(); for (let i = 0; i < 5; i++) { const x = p.x - 10 + i * 5; ctx.moveTo(x, p.y - 64 + bob); ctx.lineTo(x + 2, p.y - 82 + bob); ctx.lineTo(x + 5, p.y - 64 + bob); } ctx.fill();
+  ctx.fillStyle = '#9d4edd'; for (let i = 0; i < 3; i++) ctx.fillRect(p.x - 9 + i * 7, p.y - 70 + bob, 3, 6);
+}
+function drawSaiyanMaster(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.08) * 2; shadow(p);
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 50, 4, '#ff6b1a');
+  ctx.fillStyle = '#4a90e2'; ctx.fillRect(p.x - 12, p.y - 25 + bob, 24, 5);
+  inkEllipse(p.x, p.y - 60 + bob, 9, 10, '#f4c28a');
+  ctx.fillStyle = '#1a0e08'; ctx.beginPath(); for (let i = 0; i < 5; i++) { const x = p.x - 9 + i * 4; ctx.moveTo(x, p.y - 65 + bob); ctx.lineTo(x + 2, p.y - 78 + bob); ctx.lineTo(x + 4, p.y - 65 + bob); } ctx.fill();
+}
+function drawRyuk(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.04) * 3; shadow(p);
+  inkRoundRect(p.x - 11, p.y - 56 + bob, 22, 50, 4, '#14141a');
+  // spiky shoulders
+  ctx.fillStyle = '#14141a'; ctx.beginPath(); ctx.moveTo(p.x - 11, p.y - 50 + bob); ctx.lineTo(p.x - 20, p.y - 56 + bob); ctx.lineTo(p.x - 11, p.y - 44 + bob); ctx.fill();
+  inkEllipse(p.x, p.y - 64 + bob, 9, 11, '#1a1a20');
+  // glowing eyes
+  ctx.fillStyle = '#ffd24a'; ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.arc(p.x - 4, p.y - 65 + bob, 2.4, 0, Math.PI * 2); ctx.arc(p.x + 4, p.y - 65 + bob, 2.4, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+}
+function drawKenshiro(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.05) * 2; shadow(p);
+  inkRoundRect(p.x - 7, p.y - 22 + bob, 6, 22, 2, '#3a3a3a'); inkRoundRect(p.x + 1, p.y - 22 + bob, 6, 22, 2, '#3a3a3a');
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 30, 3, '#1a2a4a');
+  ctx.strokeStyle = '#c41e3a'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(p.x-5,p.y-45+bob); ctx.lineTo(p.x-3,p.y-30+bob); ctx.moveTo(p.x,p.y-45+bob); ctx.lineTo(p.x+1,p.y-28+bob); ctx.moveTo(p.x+5,p.y-45+bob); ctx.lineTo(p.x+3,p.y-30+bob); ctx.stroke();
+  inkEllipse(p.x, p.y - 60 + bob, 9, 11, '#e8c69a');
+  ctx.fillStyle = '#3d2818'; ctx.beginPath(); ctx.ellipse(p.x, p.y - 67 + bob, 10, 6, 0, Math.PI, true); ctx.fill();
+}
+function drawTrainer(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); const bob = Math.sin(frame * 0.06) * 2; shadow(p);
+  inkRoundRect(p.x - 7, p.y - 22 + bob, 6, 22, 2, '#3a5a8a'); inkRoundRect(p.x + 1, p.y - 22 + bob, 6, 22, 2, '#3a5a8a');
+  inkRoundRect(p.x - 12, p.y - 50 + bob, 24, 30, 4, '#4a90e2');
+  inkEllipse(p.x, p.y - 60 + bob, 9, 10, '#f4c28a');
+  // red cap
+  ctx.fillStyle = '#e63b3b'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.ellipse(p.x, p.y - 68 + bob, 10, 5, 0, Math.PI, true); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(p.x + 6, p.y - 66 + bob, 7, 3, 0, 0, Math.PI); ctx.fill();
+}
+function drawSage(gx, gy) {
+  if (!visible(gx)) return; const p = iso(gx, gy); shadow(p);
+  ctx.fillStyle = '#5a2d8c'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(p.x - 14, p.y); ctx.lineTo(p.x - 8, p.y - 40); ctx.lineTo(p.x + 8, p.y - 40); ctx.lineTo(p.x + 14, p.y); ctx.closePath(); ctx.fill(); ctx.stroke();
+  inkEllipse(p.x, p.y - 50, 9, 11, '#e8c69a');
+  ctx.fillStyle = '#f0e8d8'; ctx.beginPath(); ctx.ellipse(p.x, p.y - 42, 8, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#3a1c5c'; ctx.beginPath(); ctx.ellipse(p.x, p.y - 56, 11, 8, 0, Math.PI, true); ctx.fill();
+}
+
+function drawNPCs() {
+  drawNinja(7, 4.5);
+  if (gameProgress.porteOuverte) drawNaruto(15, 4.2);
+  if (gameProgress.jutsuFait) drawLuffy(28, 4.4);
+  if (gameProgress.onepieceFait) drawTanjiro(40, 4.4);
+  if (gameProgress.demonFait) drawPharaoh(51, 4.4);
+  if (gameProgress.yugiohFait) drawSaiyanMaster(62, 4.5);
+  if (gameProgress.saiyanFait) drawRyuk(73, 4.6);
+  if (gameProgress.deathnoteFait) drawKenshiro(83, 4.5);
+  if (gameProgress.hokutoFait) drawTrainer(92, 4.4);
+  drawSage(99, 3);
+}
+
+function drawPlayer() {
+  const p = iso(player.gx, player.gy, 0); const bob = Math.sin(player.bobPhase) * 3; const px = p.x, py = p.y;
+  ctx.beginPath(); ctx.ellipse(px, py + 5, 18, 7, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  inkRoundRect(px - 10, py - 22 + bob, 8, 24, 2, '#2a1f0a'); inkRoundRect(px + 2, py - 22 + bob, 8, 24, 2, '#2a1f0a');
+  inkRoundRect(px - 14, py - 58 + bob, 28, 38, 5, '#ff8c1a');
+  ctx.fillStyle = '#2d8f3a'; ctx.fillRect(px - 14, py - 58 + bob, 28, 3);
+  if (!gameProgress.colisLivre) {
+    inkRoundRect(px + 10, py - 53 + bob, 15, 26, 3, '#8a4a25');
+    ctx.fillStyle = '#c41e3a'; ctx.fillRect(px + 12, py - 42 + bob, 11, 2); ctx.fillRect(px + 17, py - 47 + bob, 2, 12);
+  }
+  inkEllipse(px, py - 72 + bob, 11, 13, '#f4c28a');
+  ctx.fillStyle = '#1a0e08'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 1.6; ctx.beginPath();
+  ctx.moveTo(px - 11, py - 76 + bob); for (let i = 0; i < 6; i++) { const x = px - 11 + i * 4; ctx.lineTo(x + 2, py - 88 + bob - (i % 2) * 3); ctx.lineTo(x + 4, py - 76 + bob); } ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#1a0e08'; ctx.fillRect(px - 5, py - 72 + bob, 2, 3); ctx.fillRect(px + 3, py - 72 + bob, 2, 3);
+
+  if (nearZone && !dialogOpen) {
+    ctx.save(); const label = `[ E ] ${nearZone.label}`; ctx.font = 'bold 13px Inter';
+    const tw = ctx.measureText(label).width + 24; ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.beginPath(); ctx.roundRect(px - tw / 2, py - 115 + bob, tw, 28, 4); ctx.fill();
+    ctx.strokeStyle = '#ff8c1a'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#ff8c1a'; ctx.textAlign = 'center'; ctx.fillText(label, px, py - 96 + bob); ctx.restore();
+  }
+  // Blocked hint
+  if (player.gx >= currentMaxX() - 0.15 && !nearZone) {
+    ctx.save(); const msg = '⛔ Termine l\'épreuve pour continuer'; ctx.font = 'bold 11px Inter';
+    const tw = ctx.measureText(msg).width + 18; ctx.fillStyle = 'rgba(196,30,58,0.85)';
+    ctx.beginPath(); ctx.roundRect(px - tw/2, py - 140 + bob, tw, 22, 3); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.fillText(msg, px, py - 125 + bob); ctx.restore();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// AMBIENT PARTICLES (per biome)
+// ══════════════════════════════════════════════════════════════
+const particles = [];
+for (let i = 0; i < 70; i++) particles.push({ x: Math.random() * C.width, y: Math.random() * C.height, vx: 0, vy: 0, s: 0, r: Math.random() * Math.PI * 2 });
+function drawParticles() {
+  const biome = biomeNameAt(player.gx).part;
+  for (const p of particles) {
+    switch (biome) {
+      case 'petal':   p.vx = -0.5; p.vy = 0.55; p.s = 4; break;
+      case 'spray':   p.vx = -1.0; p.vy = -0.2; p.s = 2; break;
+      case 'firefly': p.vx = Math.sin(p.r) * 0.4; p.vy = Math.cos(p.r * 1.3) * 0.4; p.s = 2.4; break;
+      case 'holo':    p.vx = 0; p.vy = -0.7; p.s = 2; break;
+      case 'ember':   p.vx = -0.3; p.vy = -0.8; p.s = 2.6; break;
+      case 'rain':    p.vx = -0.6; p.vy = 7; p.s = 1.4; break;
+      case 'ash':     p.vx = -0.5; p.vy = 0.6; p.s = 2; break;
+      case 'leaf':    p.vx = -0.7; p.vy = 0.5; p.s = 3.4; break;
+      case 'spirit':  p.vx = Math.sin(p.r) * 0.3; p.vy = -0.5; p.s = 2.6; break;
+      default:        p.vx = -0.4; p.vy = 0.5; p.s = 3;
+    }
+    p.x += p.vx; p.y += p.vy; p.r += 0.03;
+    if (p.x < -20) p.x = C.width + 20; if (p.x > C.width + 20) p.x = -20;
+    if (p.y > C.height + 20) { p.y = -20; p.x = Math.random() * C.width; } if (p.y < -20) p.y = C.height + 20;
+    ctx.save();
+    if (biome === 'rain') { ctx.strokeStyle = 'rgba(150,180,220,0.4)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - 1, p.y + 10); ctx.stroke(); }
+    else if (biome === 'firefly' || biome === 'spirit' || biome === 'holo') {
+      const col = biome === 'firefly' ? '255,240,140' : biome === 'spirit' ? '157,78,221' : '120,220,255';
+      ctx.shadowColor = `rgb(${col})`; ctx.shadowBlur = 10; ctx.fillStyle = `rgba(${col},${0.5 + 0.5 * Math.sin(p.r * 3)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI * 2); ctx.fill();
+    } else if (biome === 'ember') {
+      ctx.shadowColor = '#ff8c1a'; ctx.shadowBlur = 8; ctx.fillStyle = `rgba(255,${140 + Math.random()*80|0},40,0.8)`; ctx.fillRect(p.x, p.y, p.s, p.s);
+    } else if (biome === 'petal' || biome === 'leaf') {
+      ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = biome === 'petal' ? 'rgba(255,180,200,0.75)' : 'rgba(120,200,90,0.75)';
+      ctx.beginPath(); ctx.ellipse(0, 0, p.s, p.s * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    } else { ctx.fillStyle = biome === 'spray' ? 'rgba(200,235,255,0.6)' : 'rgba(180,180,180,0.5)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.s, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAIN LOOP
+// ══════════════════════════════════════════════════════════════
+function gameLoop() {
+  frame++; updatePlayer();
+  drawSky();
+  drawWalls();
+  drawFloor();
+  drawKonohaGate(); drawKonohaVillage(); drawSeaZone(); drawDemonForest(); drawArena();
+  drawSealedRock(); drawSaiyanZone(); drawDeathNoteCity(); drawHokutoZone(); drawPokemonZone(); drawSageGrove();
+  drawNPCs(); drawPlayer(); drawParticles();
+  requestAnimationFrame(gameLoop);
+}
+
+// ══════════════════════════════════════════════════════════════
+// INTERACTIONS
+// ══════════════════════════════════════════════════════════════
+let currentInteractionId = null;
+async function ouvrirInteraction(url, id) {
+  currentInteractionId = id;
+  // Permission caméra/micro demandée UNE seule fois, ici, sur le geste utilisateur
+  if (CAMERA_EPREUVES.has(id)) await ensureMedia();
+  const f = document.getElementById('interaction-frame');
+  // Quand l'iframe a fini de charger, on lui pousse explicitement le stream
+  // (fiable même en file:// où window.parent peut être bloqué)
+  f.onload = () => {
+    try {
+      if (window.__mangaStream && f.contentWindow) {
+        f.contentWindow.__mangaStream = window.__mangaStream;
+      }
+    } catch (e) { console.warn('Push stream → iframe a échoué :', e); }
+  };
+  f.src = url;
+  document.getElementById('interaction-container').style.display = 'block';
+}
+function quitterInteraction() {
+  const f = document.getElementById('interaction-frame');
+  document.getElementById('interaction-container').style.display = 'none'; f.src = 'about:blank'; currentInteractionId = null;
+}
+const COMPLETION = {
+  porte:       { flag: 'porteOuverte', speaker: 'Garde de Konoha', msg: '"La porte cède ! Bienvenue à Konoha. Trouve Naruto pour apprendre le jutsu."', next: 'Apprendre le jutsu de Naruto' },
+  naruto:      { flag: 'jutsuFait',    speaker: 'Naruto', msg: '"Yatta ! Kage Bunshin maîtrisé, dattebayo ! Direction le port et le Grand Bleu !"', next: 'Affronter les Marines (One Piece)' },
+  onepiece:    { flag: 'onepieceFait', speaker: 'Luffy', msg: '"Shishishi ! Les Marines sont KO ! La forêt des démons t\'attend."', next: 'Trancher les démons (Demon Slayer)' },
+  demonslayer: { flag: 'demonFait',    speaker: 'Tanjiro', msg: '"Souffle parfait. Les démons sont vaincus. L\'arène du duel est ouverte."', next: 'Duel de Janken (Yu-Gi-Oh)' },
+  yugioh:      { flag: 'yugiohFait',   speaker: 'Le Pharaon', msg: '"Le cœur des cartes t\'a choisi ! Un rocher saiyan bloque la suite."', next: 'Briser le rocher (Super Saiyan)' },
+  saiyan:      { flag: 'saiyanFait',   speaker: 'Maître Saiyan', msg: '"Transformation atteinte ! Rocher pulvérisé. Une cité sombre t\'attend..."', next: 'Le carnet (Death Note)' },
+  deathnote:   { flag: 'deathnoteFait',speaker: 'Ryuk', msg: '"Hyuk hyuk... le nom est écrit. Les terres du Hokuto sont devant toi."', next: 'Tracer la Grande Ourse' },
+  hokuto:      { flag: 'hokutoFait',   speaker: 'Kenshiro', msg: '"Tu as suivi la Voie du Hokuto. Une prairie joyeuse t\'attend enfin."', next: 'Capturer le Pokémon' },
+  pokemon:     { flag: 'pokemonFait',  speaker: 'Dresseur', msg: '"Gotcha ! Pokémon capturé ! Le Sage est juste là, livre ton colis !"', next: 'Livrer le colis au Sage' },
+};
+window.addEventListener('message', (ev) => {
+  if (!ev.data || !ev.data.type) return;
+  if (ev.data.type === 'interaction-complete') {
+    const id = ev.data.id || currentInteractionId; const c = COMPLETION[id];
+    if (c && !gameProgress[c.flag]) {
+      gameProgress[c.flag] = true; addCrystals(1); refreshProgress();
+      setTimeout(() => { quitterInteraction(); showDialog(c.speaker, c.msg); setMission(c.next); }, 800);
+    }
+  } else if (ev.data.type === 'close-interaction') { quitterInteraction(); }
+});
+
+// ══════════════════════════════════════════════════════════════
+// START
+// ══════════════════════════════════════════════════════════════
+document.getElementById('start-btn').onclick = async () => {
+  document.getElementById('intro').classList.add('hidden');
+  setTimeout(() => document.getElementById('intro').style.display = 'none', 900);
+  // Musique d'ambiance (démarrée sur le geste utilisateur)
+  MangaAudio.init(); MangaAudio.resume(); MangaAudio.startMusic(); MangaAudio.sfx.open();
+  // Permission caméra/micro demandée UNE SEULE FOIS, au démarrage, sur ce user gesture.
+  // Comme ça toutes les épreuves suivantes réutilisent le même flux sans re-prompt.
+  ensureMedia(); // non-bloquant : la planète démarre pendant que le navigateur affiche le popup
+  refreshProgress(); gameLoop();
+  setTimeout(() => showDialog('Garde de Konoha', '"Halte ! Tu portes un colis pour le Sage de la Planète Manga ? Pour le rejoindre, tu devras traverser dix mondes légendaires. Mais d\'abord... pousse cette porte avec ta main !"'), 600);
+};
+
+// Intro background sparkles
+(function introFx() {
+  const cnv = document.createElement('canvas'); cnv.className = 'bgfx';
+  const intro = document.getElementById('intro'); intro.appendChild(cnv);
+  const x = cnv.getContext('2d'); function rs() { cnv.width = innerWidth; cnv.height = innerHeight; } rs(); addEventListener('resize', rs);
+  const st = []; for (let i = 0; i < 80; i++) st.push({ x: Math.random() * innerWidth, y: Math.random() * innerHeight, s: Math.random() * 2, v: 0.2 + Math.random() });
+  (function a() { if (intro.classList.contains('hidden')) return; x.clearRect(0, 0, cnv.width, cnv.height);
+    for (const s of st) { s.y += s.v; if (s.y > cnv.height) s.y = 0; x.fillStyle = `rgba(255,200,120,${0.3 + s.s * 0.3})`; x.fillRect(s.x, s.y, s.s, s.s); } requestAnimationFrame(a); })();
+})();
+</script>
+</body>
+</html>

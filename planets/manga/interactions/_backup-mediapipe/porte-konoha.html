@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Porte de Konoha</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #050300; overflow: hidden; height: 100vh; font-family: 'Inter', sans-serif; color: #fff; }
+  canvas { display: block; position: absolute; top: 0; left: 0; }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; padding: 30px 40px; z-index: 5;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none;
+  }
+  #title {
+    font-family: 'Bangers', 'Montserrat', sans-serif; font-size: 32px;
+    color: #ff8c1a; letter-spacing: 3px; text-shadow: 0 0 20px rgba(255,140,26,0.6);
+  }
+  #title small { display: block; font-size: 12px; color: #9e8e74; letter-spacing: 2px; margin-top: 4px; font-family: 'Inter', sans-serif; font-weight: 400; }
+  #status { font-size: 13px; color: #9e8e74; letter-spacing: 2px; text-transform: uppercase; text-align: right; }
+  #status strong { color: #2d8f3a; }
+
+  #gauge-wrap {
+    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    width: min(560px, 70vw); z-index: 5; pointer-events: none;
+    text-align: center;
+  }
+  #gauge-label {
+    font-family: 'Bangers', sans-serif; letter-spacing: 4px; font-size: 18px;
+    color: #ffd700; margin-bottom: 10px; text-shadow: 0 0 12px rgba(255,215,0,0.5);
+  }
+  #gauge-bar {
+    height: 22px;
+    background: rgba(0,0,0,0.6);
+    border: 2px solid #ff8c1a;
+    position: relative; overflow: hidden;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+  #gauge-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 0%;
+    background: linear-gradient(90deg, #2d8f3a 0%, #ff8c1a 60%, #ffd700 100%);
+    transition: width 0.08s linear;
+    box-shadow: 0 0 20px #ff8c1a;
+  }
+  #tip {
+    margin-top: 16px; font-size: 13px; letter-spacing: 1px; color: #c4b89e;
+  }
+  #cam {
+    position: fixed; bottom: 30px; right: 30px;
+    width: 220px; height: 165px; z-index: 6;
+    border: 2px solid #ff8c1a; pointer-events: none;
+    box-shadow: 0 0 24px rgba(255,140,26,0.4);
+    overflow: hidden;
+  }
+  #cam video, #cam canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; transform: scaleX(-1);
+  }
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 8; transition: opacity 0.3s; }
+  #endMsg {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 20px; z-index: 10; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  }
+  #endMsg h1 { font-family: 'Bangers', sans-serif; font-size: 80px; color: #ffd700; text-shadow: 0 0 30px #ffd700, 0 0 60px #ff8c1a; letter-spacing: 4px; }
+  #endMsg p { color: #fff5e1; font-size: 16px; letter-spacing: 2px; }
+  @keyframes shake { 0%, 100% { transform: translate(0,0); } 25% { transform: translate(-6px, 2px);} 50% { transform: translate(4px, -3px); } 75% { transform: translate(-3px, -2px); } }
+  body.shake #stage { animation: shake 0.15s linear infinite; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+</div>
+
+<div id="hud">
+  <div id="title">PORTE DE KONOHA<small>Pousse la porte avec ta main face à la caméra</small></div>
+  <div id="status">Statut : <strong id="hand-status">CHARGEMENT...</strong></div>
+</div>
+
+<div id="gauge-wrap">
+  <div id="gauge-label">FORCE DE POUSSÉE</div>
+  <div id="gauge-bar"><div id="gauge-fill"></div></div>
+  <div id="tip">📷 Mets ta paume ouverte face à la caméra et avance-la rapidement vers l'écran</div>
+</div>
+
+<div id="cam">
+  <video id="camVideo" autoplay playsinline muted></video>
+  <canvas id="camCanvas"></canvas>
+</div>
+
+<div id="flash"></div>
+
+<div id="endMsg">
+  <h1>PORTE OUVERTE !</h1>
+  <p>+1 💎 — Bienvenue à Konoha</p>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  KONOHA GATE — MediaPipe Hands (reliable detection)
+// ═══════════════════════════════════════════════════════════════
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const camVideo = document.getElementById('camVideo');
+const camCanvas = document.getElementById('camCanvas');
+const camCtx = camCanvas.getContext('2d');
+const gaugeFill = document.getElementById('gauge-fill');
+const handStatus = document.getElementById('hand-status');
+
+let imgsLoaded = 0;
+const imgClosedSrc = new Image();
+const imgOpenSrc = new Image();
+imgClosedSrc.onload = imgOpenSrc.onload = () => { imgsLoaded++; };
+imgClosedSrc.src = '../assets/porte-fermee.jpg';
+imgOpenSrc.src = '../assets/porte-ouverte.jpg';
+
+let gateState = 'closed';
+let openProgress = 0;
+let pushEnergy = 0;
+const energyDecay = 0.5;
+let energyGain = 0;
+let frame = 0;
+let openedSent = false;
+
+let currentHands = null;
+let palmRadiusHistory = [];
+
+function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
+window.addEventListener('resize', resize); resize();
+
+// ─── MediaPipe Hands setup ───────────────────────────────────
+function dist2D(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function getPalmRadius(pts) {
+  const w = pts[0];
+  let sum = 0;
+  for (const i of [5, 9, 13, 17]) sum += dist2D(w, pts[i]);
+  return sum / 4;
+}
+
+function countExtended(pts) {
+  const wrist = pts[0];
+  const tips = [8, 12, 16, 20], pips = [6, 10, 14, 18];
+  let count = 0;
+  for (let i = 0; i < 4; i++) {
+    if (dist2D(pts[tips[i]], wrist) > dist2D(pts[pips[i]], wrist) * 1.05) count++;
+  }
+  const thumb = pts[4], thumbBase = pts[2];
+  if (dist2D(thumb, wrist) > dist2D(thumbBase, wrist) * 1.1) count++;
+  return count;
+}
+
+function onResults(res) {
+  // Update mini-cam overlay (skeleton)
+  camCanvas.width = camVideo.videoWidth || 640;
+  camCanvas.height = camVideo.videoHeight || 480;
+  camCtx.clearRect(0, 0, camCanvas.width, camCanvas.height);
+
+  if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+    const pts = res.multiHandLandmarks[0];
+    currentHands = pts;
+    // Draw skeleton in mini-cam
+    camCtx.save();
+    camCtx.shadowBlur = 8; camCtx.shadowColor = '#ff8c1a';
+    drawConnectors(camCtx, pts, HAND_CONNECTIONS, { color: '#ffd700', lineWidth: 3 });
+    drawLandmarks(camCtx, pts, { color: '#ff8c1a', lineWidth: 1, radius: 3 });
+    camCtx.restore();
+  } else {
+    currentHands = null;
+  }
+}
+
+// ─── Push detection loop (runs every frame) ──────────────────
+function updatePushDetection() {
+  energyGain = 0;
+  if (!currentHands) {
+    handStatus.textContent = 'MAIN NON DÉTECTÉE';
+    handStatus.style.color = '#c41e3a';
+    palmRadiusHistory = [];
+    return;
+  }
+  // Convert normalized coords (0..1) to pixel-ish (multiply by 1000 just for stable scale)
+  const pts = currentHands.map(p => ({ x: p.x * 1000, y: p.y * 1000, z: p.z }));
+
+  const palmR = getPalmRadius(pts);
+  const extended = countExtended(pts);
+
+  palmRadiusHistory.push(palmR);
+  if (palmRadiusHistory.length > 10) palmRadiusHistory.shift();
+
+  const isOpen = extended >= 3;
+
+  let growthRate = 0;
+  if (palmRadiusHistory.length >= 5) {
+    const older = palmRadiusHistory.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+    const newer = palmRadiusHistory.slice(-3).reduce((a, b) => a + b, 0) / 3;
+    growthRate = (newer - older) / Math.max(1, older);
+  }
+
+  // Also use the z-coordinate (closer to camera = more negative z in MediaPipe)
+  const wristZ = currentHands[0].z; // negative when hand near camera
+  const zBoost = wristZ < -0.05 ? Math.min(1, -wristZ * 8) : 0;
+
+  // Size factor (palm radius relative to image)
+  const sizeFactor = Math.min(1.5, palmR / 180); // tuned
+
+  if (isOpen) {
+    if (growthRate > 0.03) {
+      energyGain = 3 + growthRate * 50 + zBoost * 2;
+      handStatus.textContent = 'POUSSE ! 💪';
+      handStatus.style.color = '#ffd700';
+    } else if (sizeFactor > 0.85 || zBoost > 0.3) {
+      energyGain = 0.8 + sizeFactor + zBoost;
+      handStatus.textContent = 'CONTINUE...';
+      handStatus.style.color = '#ff8c1a';
+    } else {
+      handStatus.textContent = 'AVANCE TA MAIN VERS LA CAMÉRA';
+      handStatus.style.color = '#ff8c1a';
+    }
+  } else {
+    handStatus.textContent = 'OUVRE TA MAIN ✋';
+    handStatus.style.color = '#c41e3a';
+  }
+}
+
+// ─── Render ──────────────────────────────────────────────────
+function drawScene() {
+  ctx.fillStyle = '#0a0805'; ctx.fillRect(0, 0, cv.width, cv.height);
+
+  const grad = ctx.createRadialGradient(cv.width/2, cv.height/2, 100, cv.width/2, cv.height/2, cv.width/1.2);
+  grad.addColorStop(0, '#3a1f10'); grad.addColorStop(1, '#0a0805');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, cv.width, cv.height);
+
+  drawPetals();
+
+  if (imgsLoaded < 2) {
+    ctx.fillStyle = '#9e8e74'; ctx.font = '16px Inter'; ctx.textAlign = 'center';
+    ctx.fillText('Chargement des images...', cv.width / 2, cv.height / 2);
+    return;
+  }
+
+  const imgW = Math.min(cv.width * 0.6, 700);
+  const imgH = imgW * 0.75;
+  const imgX = (cv.width - imgW) / 2;
+  const imgY = (cv.height - imgH) / 2 - 30;
+
+  if (gateState !== 'open' || openProgress < 1) {
+    ctx.save();
+    ctx.globalAlpha = 1 - openProgress;
+    ctx.drawImage(imgClosedSrc, imgX, imgY, imgW, imgH);
+    ctx.restore();
+  }
+  if (gateState !== 'closed') {
+    ctx.save();
+    ctx.globalAlpha = openProgress;
+    ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 40 * openProgress;
+    ctx.drawImage(imgOpenSrc, imgX, imgY, imgW, imgH);
+    ctx.restore();
+  }
+
+  if (gateState === 'closed' && pushEnergy > 0) {
+    const cx = cv.width / 2, cy = cv.height / 2 - 30;
+    const r = 80 + pushEnergy * 2 + Math.sin(frame * 0.2) * 8;
+    ctx.save();
+    ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 30 + pushEnergy * 0.4;
+    ctx.strokeStyle = `rgba(255,215,0,${0.3 + pushEnergy * 0.005})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  if (gateState === 'opening') {
+    for (let i = 0; i < 6; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 80 + Math.random() * 150;
+      const x = cv.width / 2 + Math.cos(a) * r;
+      const y = cv.height / 2 - 30 + Math.sin(a) * r;
+      ctx.fillStyle = `rgba(255,${180 + Math.random() * 75},80,${Math.random() * 0.6})`;
+      ctx.fillRect(x, y, 3, 3);
+    }
+  }
+}
+
+const petals = [];
+for (let i = 0; i < 28; i++) petals.push({
+  x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight,
+  vx: -0.4 - Math.random() * 0.6, vy: 0.4 + Math.random() * 0.7,
+  s: 3 + Math.random() * 5, r: Math.random() * Math.PI * 2,
+});
+function drawPetals() {
+  for (const p of petals) {
+    p.x += p.vx; p.y += p.vy; p.r += 0.04;
+    if (p.x < -20) p.x = cv.width + 20;
+    if (p.y > cv.height + 20) { p.y = -20; p.x = Math.random() * cv.width; }
+    ctx.save();
+    ctx.translate(p.x, p.y); ctx.rotate(p.r);
+    ctx.fillStyle = 'rgba(255,180,200,0.7)';
+    ctx.beginPath(); ctx.ellipse(0, 0, p.s, p.s * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ─── Sound effects ───────────────────────────────────────────
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function tone(f, type, d, v) {
+  try {
+    ensureAudio();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(v, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + d);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + d);
+  } catch(e){}
+}
+
+// ─── Main loop ───────────────────────────────────────────────
+function loop() {
+  frame++;
+  updatePushDetection();
+
+  pushEnergy += energyGain;
+  pushEnergy -= energyDecay;
+  pushEnergy = Math.max(0, Math.min(100, pushEnergy));
+  gaugeFill.style.width = pushEnergy + '%';
+
+  // Push sound (small clicks scaled to gain)
+  if (energyGain > 2 && frame % 6 === 0) tone(140 + pushEnergy * 6, 'square', 0.05, 0.04);
+
+  if (gateState === 'closed' && pushEnergy >= 100) {
+    gateState = 'opening';
+    document.body.classList.add('shake');
+    document.getElementById('flash').style.opacity = '0.9';
+    setTimeout(() => document.getElementById('flash').style.opacity = '0', 300);
+    // Door opening sound
+    tone(80, 'sawtooth', 1.2, 0.18);
+    tone(200, 'triangle', 0.8, 0.12);
+  }
+  if (gateState === 'opening') {
+    openProgress += 0.02;
+    if (openProgress >= 1) {
+      gateState = 'open';
+      openProgress = 1;
+      document.body.classList.remove('shake');
+      document.getElementById('endMsg').style.display = 'flex';
+      tone(523, 'sine', 0.3, 0.15);
+      setTimeout(() => tone(659, 'sine', 0.3, 0.15), 150);
+      setTimeout(() => tone(784, 'sine', 0.5, 0.18), 300);
+      if (!openedSent) {
+        openedSent = true;
+        setTimeout(() => {
+          try { window.parent.postMessage({ type: 'interaction-complete', id: 'porte' }, '*'); } catch(e){}
+        }, 1800);
+      }
+    }
+  }
+
+  drawScene();
+  requestAnimationFrame(loop);
+}
+
+// ─── Bootstrap MediaPipe Hands (flux caméra partagé par le hub) ──
+async function getSharedStream() {
+  try { const P = window.parent; if (P && P.__mangaStream && P.__mangaStream.active) return P.__mangaStream; } catch(e){}
+  return await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: true });
+}
+const hands = new Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+hands.onResults(onResults);
+
+(async () => {
+  try {
+    const stream = await getSharedStream();
+    camVideo.srcObject = new MediaStream(stream.getVideoTracks());
+    await camVideo.play();
+    handStatus.textContent = 'PRÊT'; handStatus.style.color = '#2d8f3a';
+    async function pump() { if (camVideo.readyState >= 2) { try { await hands.send({ image: camVideo }); } catch(e){} } requestAnimationFrame(pump); }
+    pump();
+  } catch (err) {
+    handStatus.textContent = 'CAMÉRA REFUSÉE'; handStatus.style.color = '#c41e3a';
+  }
+})();
+
+loop();
+</script>
+</body>
+</html>

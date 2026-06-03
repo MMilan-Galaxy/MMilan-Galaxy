@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Hokuto Shichisei — Grande Ourse</title>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  body { background: #05030a; overflow: hidden; height: 100vh; font-family: 'Inter', sans-serif; color: #fff; display: flex; justify-content: center; align-items: center; }
+
+  #gc {
+    width: 100vw; height: 100vh; background: linear-gradient(180deg, #0a0008 0%, #1a0508 60%, #050308 100%);
+    position: relative; overflow: hidden;
+  }
+
+  canvas { display: block; }
+
+  #hud {
+    position: absolute; top: 0; left: 0; right: 0; padding: 30px 40px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    z-index: 10; pointer-events: none;
+  }
+  #title {
+    font-family: 'Bangers', sans-serif; letter-spacing: 5px; font-size: 36px;
+    color: #c41e3a; text-shadow: 0 0 30px #c41e3a, 0 0 60px #ff8c1a;
+  }
+  #title small { display: block; font-family: 'Inter', sans-serif; font-weight: 400; font-size: 11px; color: #9e8e74; letter-spacing: 3px; margin-top: 4px; }
+  #right-hud { text-align: right; display: flex; flex-direction: column; gap: 8px; }
+  #score-d {
+    font-family: 'Bangers', sans-serif; letter-spacing: 3px; font-size: 22px;
+    color: #ffd700; text-shadow: 0 0 12px #ffd700;
+  }
+  #lives-d { display: flex; gap: 8px; justify-content: flex-end; }
+  .heart { width: 14px; height: 14px; background: #c41e3a; border-radius: 50%;
+           box-shadow: 0 0 12px #ff4d4d; transition: 0.3s; }
+  .heart.lost { background: rgba(255,255,255,0.1); box-shadow: none; transform: scale(0.6); }
+
+  #ov {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    background: rgba(5,3,8,0.92); backdrop-filter: blur(6px); z-index: 30;
+    text-align: center;
+  }
+  #ov h2 {
+    font-family: 'Bangers', sans-serif; letter-spacing: 5px; font-size: 56px;
+    color: #c41e3a; text-shadow: 0 0 30px #c41e3a;
+  }
+  #ov p { color: #c4b89e; max-width: 480px; line-height: 1.6; letter-spacing: 1px; font-size: 14px; }
+  #ov button, #ov .next-btn {
+    background: #c41e3a; border: 2px solid #c41e3a; color: #fff;
+    padding: 14px 40px; cursor: pointer; font-family: 'Bangers', sans-serif;
+    letter-spacing: 4px; font-size: 22px; margin-top: 10px;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  #ov button:hover { transform: scale(1.05); box-shadow: 0 0 40px rgba(196,30,58,0.6); }
+
+  #kbar {
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 12px; z-index: 10;
+  }
+  .ki {
+    width: 56px; height: 70px; border: 2px solid rgba(196,30,58,0.3);
+    background: rgba(0,0,0,0.5); display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: monospace; color: rgba(255,180,180,0.5);
+    position: relative; overflow: hidden;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    transition: 0.2s;
+  }
+  .ki .k { font-size: 18px; font-weight: 900; letter-spacing: 1px;}
+  .ki .n { font-size: 9px; margin-top: 3px; letter-spacing: 1px; }
+  .ki.pending { border-color: #ffd700; color: #ffd700; box-shadow: 0 0 18px rgba(255,215,0,0.5); }
+  .ki.done { border-color: #2d8f3a; color: #2d8f3a; }
+  .tbc { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(255,215,0,0.3); transition: height 0.04s linear; }
+
+  #fb {
+    position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%);
+    font-family: 'Bangers', sans-serif; letter-spacing: 4px; font-size: 32px;
+    opacity: 0; transition: 0.2s; z-index: 15; pointer-events: none;
+  }
+
+  #atatata {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    z-index: 25; pointer-events: none;
+  }
+  #atatata .word {
+    font-family: 'Bangers', sans-serif; letter-spacing: 6px; font-size: 110px;
+    color: #c41e3a; text-shadow: 0 0 40px #c41e3a, 0 0 80px #ff8c1a;
+    animation: ata 0.08s linear infinite;
+  }
+  @keyframes ata { 0%,100%{transform: scale(1) rotate(-2deg);} 50%{transform:scale(1.08) rotate(2deg);} }
+
+  #shindeiru {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    z-index: 26; pointer-events: none;
+  }
+  #shindeiru .word {
+    font-family: 'Bangers', sans-serif; letter-spacing: 8px; font-size: 80px;
+    color: #fff; text-shadow: 0 0 30px #c41e3a, 0 0 60px #c41e3a, 0 0 100px #c41e3a;
+    transform: rotate(-3deg);
+  }
+  #shindeiru .sub {
+    position: absolute; bottom: 30%;
+    font-family: 'Inter', sans-serif; letter-spacing: 4px; font-size: 14px;
+    color: #c4b89e; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div id="gc">
+  <canvas id="c"></canvas>
+
+  <div id="hud">
+    <div id="title">HOKUTO SHICHISEI<small>Reproduis la Grande Ourse — appuie sur les étoiles dans l'ordre</small></div>
+    <div id="right-hud">
+      <div id="score-d">SCORE : 0</div>
+      <div id="lives-d"><div class="heart"></div><div class="heart"></div><div class="heart"></div></div>
+    </div>
+  </div>
+
+  <div id="fb"></div>
+  <div id="atatata"><div class="word">ATATATATATATATA!</div></div>
+  <div id="shindeiru">
+    <div class="word">お前はもう死んでいる</div>
+    <div class="sub">OMAE WA MOU SHINDEIRU</div>
+  </div>
+  <div id="kbar"></div>
+
+  <div id="ov">
+    <h2>LA GRANDE OURSE</h2>
+    <p>Sept étoiles forment la constellation sacrée du Hokuto Shichisei.<br>
+       Frappe chaque touche au bon moment quand le curseur atteint l'étoile.<br>
+       <em>Tu sais déjà...</em></p>
+    <button id="sbtn">COMMENCER LE RITUEL</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  HOKUTO SHICHISEI — Grande Ourse mini-game
+// ═══════════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0;
+function resize() {
+  canvas.width = W = window.innerWidth;
+  canvas.height = H = window.innerHeight;
+}
+window.addEventListener('resize', resize); resize();
+
+let audioCtx = null;
+let masterGain = null;
+let droneNodes = null;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.7;
+    masterGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playTone(f, type, d, v) {
+  try {
+    initAudio();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(v, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + d);
+    o.connect(g); g.connect(masterGain);
+    o.start(); o.stop(audioCtx.currentTime + d);
+  } catch(e){}
+}
+// Filtered noise burst (whoosh / sparkle)
+function playNoise(d, v, lowFreq = 600, highFreq = 2400) {
+  try {
+    initAudio();
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * d, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const filt = audioCtx.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.frequency.setValueAtTime(lowFreq, audioCtx.currentTime);
+    filt.frequency.exponentialRampToValueAtTime(highFreq, audioCtx.currentTime + d);
+    filt.Q.value = 4;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(v, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + d);
+    src.connect(filt); filt.connect(g); g.connect(masterGain);
+    src.start();
+  } catch(e){}
+}
+// Star "ignition" chord
+function playStarIgnite(starIdx) {
+  const baseFreqs = [261.6, 293.7, 329.6, 392.0, 440.0, 493.9, 523.3]; // C D E G A B C
+  const f = baseFreqs[Math.min(starIdx, baseFreqs.length - 1)];
+  playTone(f, 'sine', 0.4, 0.18);
+  playTone(f * 2, 'sine', 0.5, 0.10);
+  playTone(f * 3, 'triangle', 0.3, 0.05);
+}
+function playPerfect() {
+  playTone(880, 'sine', 0.15, 0.16);
+  setTimeout(() => playTone(1175, 'sine', 0.2, 0.14), 60);
+  setTimeout(() => playTone(1568, 'triangle', 0.4, 0.12), 130);
+  playNoise(0.25, 0.08, 2000, 6000);
+}
+function playFail() {
+  playTone(120, 'sawtooth', 0.5, 0.18);
+  playTone(85, 'sawtooth', 0.6, 0.14);
+  playNoise(0.3, 0.10, 200, 600);
+}
+function playWhoosh() { playNoise(0.4, 0.12, 300, 3000); }
+
+// Ambient drone (started at game start)
+function startDrone() {
+  initAudio();
+  stopDrone();
+  const o1 = audioCtx.createOscillator(); o1.type = 'sine'; o1.frequency.value = 55;
+  const o2 = audioCtx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 82.4;
+  const o3 = audioCtx.createOscillator(); o3.type = 'sawtooth'; o3.frequency.value = 41;
+  const g = audioCtx.createGain(); g.gain.value = 0;
+  g.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 2);
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
+  o1.connect(lp); o2.connect(lp); o3.connect(lp); lp.connect(g); g.connect(masterGain);
+  o1.start(); o2.start(); o3.start();
+  droneNodes = { o1, o2, o3, g };
+}
+function stopDrone() {
+  if (!droneNodes) return;
+  try {
+    droneNodes.g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+    setTimeout(() => { try { droneNodes.o1.stop(); droneNodes.o2.stop(); droneNodes.o3.stop(); } catch(e){} droneNodes = null; }, 600);
+  } catch(e){ droneNodes = null; }
+}
+// Heartbeat tick
+let lastTickAt = 0;
+function tickIfNeeded() {
+  if (state !== 'playing') return;
+  const now = performance.now();
+  // Tick interval gets faster as progress nears 1
+  const interval = 240 - progress * 60; // 240ms → 180ms
+  if (now - lastTickAt > interval) {
+    lastTickAt = now;
+    const vol = 0.05 + progress * 0.04;
+    playTone(80, 'sine', 0.06, vol);
+  }
+}
+
+// 7 stars of the Big Dipper with both Western & Japanese names
+const STARS = [
+  { n: 'Alkaid',  jp: 'Hagun',    k: 'a', x: 0.12, y: 0.50 },
+  { n: 'Mizar',   jp: 'Bukyoku',  k: 'z', x: 0.28, y: 0.46 },
+  { n: 'Alioth',  jp: 'Renjō',    k: 'e', x: 0.40, y: 0.53 },
+  { n: 'Megrez',  jp: 'Bunkyoku', k: 'r', x: 0.55, y: 0.65 },
+  { n: 'Dubhe',   jp: 'Tonrō',    k: 't', x: 0.85, y: 0.65 },
+  { n: 'Merak',   jp: 'Kyomon',   k: 'y', x: 0.80, y: 0.80 },
+  { n: 'Phecda',  jp: 'Rokuson',  k: 'u', x: 0.57, y: 0.78 },
+];
+
+// Rescale positions on resize
+function rescale() { for (const s of STARS) { s.X = s.x * W; s.Y = s.y * H; } }
+rescale();
+window.addEventListener('resize', rescale);
+
+let state = 'idle';
+let curSeg = 0, progress = 0, score = 0, lives = 3, speed = 0.0036;
+let shake = 0, hasFinished = false;
+let starsBg = [];
+let comets = [];
+for (let i = 0; i < 160; i++) starsBg.push({ x: Math.random() * 2400, y: Math.random() * 1400, r: Math.random() * 1.4, a: Math.random() });
+
+// ─── UI build ─────────────────────────────────────────────
+function buildUI() {
+  const kbar = document.getElementById('kbar'); kbar.innerHTML = '';
+  STARS.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'ki';
+    div.id = 'key-' + s.k;
+    div.innerHTML = `<span class="k">${s.k.toUpperCase()}</span><span class="n">${s.jp}</span><div class="tbc" id="tbc-${s.k}"></div>`;
+    kbar.appendChild(div);
+  });
+}
+
+function updateHUD() {
+  document.getElementById('score-d').innerText = `SCORE : ${score}`;
+  const hearts = document.querySelectorAll('.heart');
+  hearts.forEach((h, i) => h.className = i < lives ? 'heart' : 'heart lost');
+}
+
+function fb(text, color = '#ffd700') {
+  const el = document.getElementById('fb');
+  el.textContent = text; el.style.color = color; el.style.textShadow = `0 0 20px ${color}`;
+  el.style.opacity = '1';
+  setTimeout(() => el.style.opacity = '0', 500);
+}
+
+function fail() {
+  lives--; shake = 18;
+  playFail();
+  updateHUD();
+  progress = 0;
+  fb('RATÉ !', '#c41e3a');
+  if (lives <= 0) endGame(false);
+}
+
+function endGame(win) {
+  state = 'idle';
+  stopDrone();
+  if (win) {
+    hasFinished = true;
+    // Cinematic finale
+    setTimeout(() => {
+      document.getElementById('atatata').style.display = 'flex';
+      // ATATATA — punch barrage
+      for (let i = 0; i < 18; i++) {
+        setTimeout(() => {
+          playTone(700 + Math.random() * 400, 'square', 0.05, 0.07);
+          playNoise(0.04, 0.06, 1000, 3500);
+        }, i * 70);
+      }
+      setTimeout(() => {
+        document.getElementById('atatata').style.display = 'none';
+        document.getElementById('shindeiru').style.display = 'flex';
+        // Dramatic bass impact
+        playTone(55, 'sawtooth', 1.4, 0.22);
+        playTone(110, 'triangle', 1.4, 0.10);
+        playNoise(0.6, 0.12, 80, 400);
+        setTimeout(() => playTone(440, 'sine', 0.8, 0.12), 400);
+      }, 1400);
+      setTimeout(() => {
+        document.getElementById('shindeiru').style.display = 'none';
+        const ov = document.getElementById('ov');
+        ov.style.display = 'flex';
+        ov.innerHTML = `<h2>HOKUTO MAÎTRISÉ</h2><p>La constellation t'a reconnu. Tu peux continuer ta route, jeune disciple.</p><button id="nextBtn">CONTINUER ✦</button>`;
+        document.getElementById('nextBtn').onclick = () => {
+          try { window.parent.postMessage({ type: 'interaction-complete', id: 'hokuto' }, '*'); } catch (e) {}
+        };
+      }, 3400);
+    }, 600);
+  } else {
+    const ov = document.getElementById('ov');
+    ov.style.display = 'flex';
+    ov.innerHTML = `<h2>RITUEL ÉCHOUÉ</h2><p>La constellation s'est dissoute. Reprends ton souffle et recommence.</p><button onclick="startGame()">RECOMMENCER</button>`;
+  }
+}
+
+function startGame() {
+  initAudio();
+  startDrone();
+  state = 'playing'; curSeg = 0; progress = 0; score = 0; lives = 3;
+  hasFinished = false; shake = 0;
+  document.getElementById('ov').style.display = 'none';
+  buildUI(); updateHUD();
+  // Whoosh on start
+  playWhoosh();
+  loop();
+}
+
+window.addEventListener('keydown', e => {
+  if (state !== 'playing') return;
+  const key = e.key.toLowerCase();
+  const target = STARS[curSeg + 1];
+  if (!target) return;
+  if (key === target.k) {
+    if (progress > 0.5 && progress <= 1.1) {
+      const accuracy = 1 - Math.abs(progress - 0.92);
+      const points = Math.round(100 * accuracy + 50);
+      score += points;
+      const isPerfect = progress > 0.85 && progress < 1.0;
+      const grade = isPerfect ? 'PARFAIT' : 'BIEN';
+      fb(grade, isPerfect ? '#ffd700' : '#2d8f3a');
+      if (isPerfect) playPerfect(); else playStarIgnite(curSeg);
+      const ki = document.getElementById('key-' + target.k);
+      if (ki) ki.classList.add('done');
+      curSeg++; progress = 0;
+      // Spawn a star burst at the new star
+      spawnBurst(STARS[curSeg].X, STARS[curSeg].Y);
+      if (curSeg >= STARS.length - 1) {
+        endGame(true);
+      }
+    } else { fail(); }
+  }
+});
+
+// ─── Star burst particles ────────────────────────────────
+let bursts = [];
+function spawnBurst(x, y) {
+  playWhoosh();
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2;
+    bursts.push({
+      x, y,
+      vx: Math.cos(a) * (2 + Math.random() * 3),
+      vy: Math.sin(a) * (2 + Math.random() * 3),
+      life: 30 + Math.random() * 20,
+      color: Math.random() < 0.5 ? '#ffd700' : '#fff',
+      size: 1.5 + Math.random() * 2.5,
+    });
+  }
+}
+function drawBursts() {
+  for (let i = bursts.length - 1; i >= 0; i--) {
+    const b = bursts[i];
+    b.x += b.vx; b.y += b.vy; b.vx *= 0.94; b.vy *= 0.94; b.life--;
+    if (b.life <= 0) { bursts.splice(i, 1); continue; }
+    const alpha = b.life / 50;
+    ctx.fillStyle = b.color === '#ffd700' ? `rgba(255,215,0,${alpha})` : `rgba(255,255,255,${alpha})`;
+    ctx.shadowColor = b.color; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+// Comets passing across the sky
+function spawnComet() {
+  comets.push({
+    x: -50, y: Math.random() * H * 0.5,
+    vx: 6 + Math.random() * 4, vy: 1 + Math.random() * 1.5,
+    life: 200, trail: [],
+  });
+}
+function drawComets() {
+  if (Math.random() < 0.005 && comets.length < 2) spawnComet();
+  for (let i = comets.length - 1; i >= 0; i--) {
+    const c = comets[i];
+    c.trail.push({ x: c.x, y: c.y });
+    if (c.trail.length > 25) c.trail.shift();
+    c.x += c.vx; c.y += c.vy; c.life--;
+    if (c.x > W + 100 || c.life <= 0) { comets.splice(i, 1); continue; }
+    // Draw trail
+    ctx.save();
+    ctx.shadowColor = '#ff8c1a'; ctx.shadowBlur = 10;
+    for (let j = 0; j < c.trail.length; j++) {
+      const t = c.trail[j];
+      const a = j / c.trail.length;
+      ctx.fillStyle = `rgba(255,${180 + j * 3},80,${a})`;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 1.5 + a * 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// ─── Hokuto fist symbol watermark ────────────────────────
+function drawFistWatermark() {
+  ctx.save();
+  ctx.globalAlpha = 0.06;
+  ctx.fillStyle = '#c41e3a';
+  ctx.font = `${Math.min(W, H) * 0.6}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('北斗', W * 0.5, H * 0.55);
+  ctx.restore();
+}
+
+// ─── Main loop ───────────────────────────────────────────
+function loop() {
+  if (state !== 'playing' && !hasFinished) {
+    // Idle background draw
+    requestAnimationFrame(loop); return;
+  }
+
+  ctx.fillStyle = '#05030a'; ctx.fillRect(0, 0, W, H);
+
+  // Atmosphere gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1a0508');
+  grad.addColorStop(1, '#05030a');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+  drawFistWatermark();
+
+  ctx.save();
+  if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.82; }
+
+  // Background stars
+  for (const s of starsBg) {
+    const sx = (s.x + (Date.now() / 80) * 0.3) % (W + 20) - 10;
+    ctx.fillStyle = `rgba(255,240,200,${s.a * (0.5 + 0.5 * Math.sin(Date.now() * 0.001 + s.x))})`;
+    ctx.fillRect(sx, s.y % H, s.r * 1.5, s.r * 1.5);
+  }
+
+  drawComets();
+
+  // ── Draw connecting lines (red Hokuto energy) ──
+  ctx.strokeStyle = '#c41e3a';
+  ctx.lineWidth = 3;
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = '#c41e3a';
+  ctx.beginPath();
+  STARS.forEach((s, i) => {
+    if (i <= curSeg) i === 0 ? ctx.moveTo(s.X, s.Y) : ctx.lineTo(s.X, s.Y);
+  });
+
+  // Active segment with energy trail
+  let curX, curY;
+  if (state === 'playing') {
+    const s1 = STARS[curSeg], s2 = STARS[curSeg + 1];
+    curX = s1.X + (s2.X - s1.X) * progress;
+    curY = s1.Y + (s2.Y - s1.Y) * progress;
+    ctx.lineTo(curX, curY);
+  }
+  ctx.stroke();
+
+  // Close polygon when finished (Phecda → Megrez)
+  if (hasFinished || curSeg >= STARS.length - 1) {
+    ctx.beginPath();
+    ctx.moveTo(STARS[6].X, STARS[6].Y);
+    ctx.lineTo(STARS[3].X, STARS[3].Y);
+    ctx.stroke();
+  }
+
+  ctx.shadowBlur = 0;
+
+  // Stars
+  STARS.forEach((s, i) => {
+    const isPast = i <= curSeg;
+    const isNext = i === curSeg + 1;
+    ctx.save();
+    if (isPast) {
+      // Golden ignited star with twinkle
+      ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 18;
+      ctx.fillStyle = '#ffd700';
+      const tw = 6 + Math.sin(Date.now() * 0.005 + i) * 2;
+      ctx.beginPath(); ctx.arc(s.X, s.Y, tw, 0, Math.PI * 2); ctx.fill();
+      // Cross sparkle
+      ctx.strokeStyle = `rgba(255,255,255,${0.5 + 0.5 * Math.sin(Date.now() * 0.005 + i)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(s.X - 14, s.Y); ctx.lineTo(s.X + 14, s.Y);
+      ctx.moveTo(s.X, s.Y - 14); ctx.lineTo(s.X, s.Y + 14);
+      ctx.stroke();
+    } else if (isNext) {
+      // Pulsing target
+      const r = 9 + Math.sin(Date.now() * 0.008) * 3;
+      ctx.shadowColor = '#c41e3a'; ctx.shadowBlur = 22;
+      ctx.fillStyle = '#c41e3a';
+      ctx.beginPath(); ctx.arc(s.X, s.Y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(255,255,255,0.7)`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.X, s.Y, r + 6 + Math.sin(Date.now() * 0.008) * 4, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(180,180,200,0.4)';
+      ctx.beginPath(); ctx.arc(s.X, s.Y, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
+    // Names
+    if (isPast || isNext) {
+      ctx.fillStyle = isPast ? "rgba(255,215,0,0.95)" : "rgba(255,255,255,0.85)";
+      ctx.font = "bold 13px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(s.n.toUpperCase() + ' ／ ' + s.jp, s.X, s.Y - 22);
+    }
+  });
+
+  // Active cursor (moving along segment)
+  if (state === 'playing') {
+    ctx.save();
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = '#fff'; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(curX, curY, 6, 0, Math.PI * 2); ctx.fill();
+    // Inner ring
+    ctx.strokeStyle = `rgba(255,215,0,${0.5 + 0.5 * Math.sin(Date.now() * 0.01)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(curX, curY, 12, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  drawBursts();
+  ctx.restore();
+
+  // UI Progress
+  if (state === 'playing') {
+    document.querySelectorAll('.ki').forEach(el => el.classList.remove('pending'));
+    const target = STARS[curSeg + 1];
+    if (target) {
+      const activeKey = document.getElementById('key-' + target.k);
+      if (activeKey) { activeKey.classList.add('pending'); document.getElementById('tbc-' + target.k).style.height = (progress * 100) + '%'; }
+    }
+    progress += speed;
+    if (progress > 1.12) fail();
+    tickIfNeeded();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('sbtn').onclick = startGame;
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Yu-Gi-Oh — Duel de Janken</title>
+<script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
+  body { background:#0c0622; overflow:hidden; height:100vh; font-family:'Inter',sans-serif; color:#e8dcff; }
+  #cam { position:absolute; inset:0; width:100vw; height:100vh; object-fit:cover; transform:scaleX(-1); opacity:0.4; }
+  #cv { position:absolute; inset:0; }
+  #hud { position:fixed; top:0; left:0; right:0; padding:26px 40px; display:flex; justify-content:space-between; z-index:5; pointer-events:none; }
+  #title { font-family:'Bangers',sans-serif; font-size:34px; letter-spacing:4px; color:#c9a3ff; text-shadow:0 0 24px #9d4edd; }
+  #title small { display:block; font-family:'Inter'; font-weight:400; font-size:12px; color:#a99; letter-spacing:2px; margin-top:4px; }
+  #score { font-family:'Bangers',sans-serif; font-size:26px; letter-spacing:3px; color:#ffd700; text-align:right; }
+  #score small { display:block; font-family:'Inter'; font-weight:400; font-size:11px; color:#a99; letter-spacing:2px; }
+  #cambox { position:fixed; bottom:26px; right:26px; width:200px; height:150px; border:1px solid #9d4edd; z-index:6; overflow:hidden; box-shadow:0 0 20px rgba(157,78,221,0.4); }
+  #cambox video, #cambox canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  #finish-btn, #startBtn { background:#9d4edd; color:#fff; border:2px solid #c9a3ff; padding:14px 40px; font-family:'Bangers',sans-serif; letter-spacing:3px; font-size:20px; cursor:pointer; z-index:20; clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px); }
+  #finish-btn { position:fixed; bottom:40px; left:50%; transform:translateX(-50%); display:none; box-shadow:0 0 30px #9d4edd; }
+  #finish-btn.show { display:block; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 30px #9d4edd;} 50%{box-shadow:0 0 60px #fff;} }
+  #prompt { position:fixed; inset:0; background:rgba(10,6,28,0.95); z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:20px; }
+  #prompt h2 { font-family:'Bangers',sans-serif; font-size:46px; color:#c9a3ff; letter-spacing:3px; }
+  #prompt p { color:#b8a8d8; max-width:560px; line-height:1.6; }
+  #err { color:#ff6b6b; font-size:13px; min-height:18px; }
+</style>
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <div id="title">DUEL DE JANKEN<small>Pierre · Feuille · Ciseaux — premier à 2 victoires</small></div>
+  <div id="score">TOI <span id="ps">0</span> — <span id="cs">0</span> PHARAON<small id="round-info">Prépare ta main</small></div>
+</div>
+
+<div id="cambox"><video id="cam2" autoplay playsinline muted></video><canvas id="camcv"></canvas></div>
+<button id="finish-btn">TERMINER ✦</button>
+
+<div id="prompt">
+  <h2>IT'S TIME TO DUEL</h2>
+  <p>Affronte le Pharaon à <strong>Janken</strong> ! Au signal « JANKEN... PON ! », montre ta main à la caméra :<br><strong>✊ Pierre</strong> · <strong>✋ Feuille</strong> · <strong>✌️ Ciseaux</strong>. Premier à <strong>2 victoires</strong> l'emporte.</p>
+  <button id="startBtn">ACTIVER LA CAMÉRA</button>
+  <div id="err"></div>
+</div>
+
+<script>
+const cam = document.getElementById('cam');
+const cam2 = document.getElementById('cam2');
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const camcv = document.getElementById('camcv');
+const camctx = camcv.getContext('2d');
+
+let hands = null, started = false, finished = false, frame = 0;
+let gestureBuf = [];       // last gestures
+let playerScore = 0, cpuScore = 0;
+const HC = (typeof HAND_CONNECTIONS !== 'undefined') ? HAND_CONNECTIONS :
+  [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+let phase = 'wait';        // wait → countdown → reveal → result
+let phaseT = 0, countdownStep = 0;
+let playerPick = null, cpuPick = null, roundResult = null;
+let nextRoundAt = 0;
+
+const NAMES = { rock:'PIERRE', paper:'FEUILLE', scissors:'CISEAUX' };
+const EMO = { rock:'✊', paper:'✋', scissors:'✌️' };
+
+// ─── SFX ───
+let _ac=null; function ac(){ if(!_ac)_ac=new(window.AudioContext||window.webkitAudioContext)(); if(_ac.state==='suspended')_ac.resume(); return _ac; }
+function snd(f,t,d,v){ try{const a=ac(),o=a.createOscillator(),g=a.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+d);}catch(e){} }
+const SFX = {
+  beep(){ snd(440,'square',0.1,0.08); },
+  go(){ snd(880,'square',0.18,0.1); },
+  win(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>snd(f,'sine',0.25,0.12),i*90)); },
+  lose(){ snd(200,'sawtooth',0.4,0.14); },
+  draw(){ snd(330,'triangle',0.2,0.1); },
+};
+
+function resize(){ cv.width=innerWidth; cv.height=innerHeight; }
+addEventListener('resize', resize); resize();
+
+function d(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+function classify(lm) {
+  const wrist = lm[0];
+  const tips=[8,12,16,20], pips=[6,10,14,18];
+  let count=0, fingers=[];
+  for (let i=0;i<4;i++){ const ext = d(lm[tips[i]],wrist) > d(lm[pips[i]],wrist)*1.05; fingers.push(ext); if(ext)count++; }
+  if (count<=1) return 'rock';
+  if (count===2 && fingers[0] && fingers[1] && !fingers[2] && !fingers[3]) return 'scissors';
+  if (count>=3) return 'paper';
+  if (count===2) return 'scissors';
+  return 'rock';
+}
+function stableGesture() {
+  if (gestureBuf.length<3) return null;
+  const recent = gestureBuf.slice(-6);
+  const cnt = {}; for (const g of recent) cnt[g]=(cnt[g]||0)+1;
+  let best=null, bn=0; for (const k in cnt) if (cnt[k]>bn){bn=cnt[k];best=k;}
+  return bn>=3 ? best : null;
+}
+
+// Adapteur ml5 handPose → format MediaPipe
+function gotHandsML5(results) {
+  const vw = cam.videoWidth || 640, vh = cam.videoHeight || 480;
+  const multiHandLandmarks = (results || []).map(h => h.keypoints.map(k => ({ x: k.x / vw, y: k.y / vh })));
+  onHands({ multiHandLandmarks });
+}
+function onHands(res) {
+  camcv.width = cam2.videoWidth||640; camcv.height = cam2.videoHeight||480;
+  camctx.clearRect(0,0,camcv.width,camcv.height);
+  if (res.multiHandLandmarks && res.multiHandLandmarks.length) {
+    const lm = res.multiHandLandmarks[0]; hands = lm;
+    camctx.strokeStyle='#c9a3ff'; camctx.lineWidth=2; camctx.fillStyle='#9d4edd';
+    for (const c of HC){ camctx.beginPath(); camctx.moveTo(lm[c[0]].x*camcv.width,lm[c[0]].y*camcv.height); camctx.lineTo(lm[c[1]].x*camcv.width,lm[c[1]].y*camcv.height); camctx.stroke(); }
+    const g = classify(lm); gestureBuf.push(g); if (gestureBuf.length>10) gestureBuf.shift();
+  } else { hands=null; }
+}
+
+function startRound() {
+  phase='countdown'; phaseT=0; countdownStep=0; playerPick=null; cpuPick=null; roundResult=null;
+}
+
+function resolve() {
+  playerPick = stableGesture();
+  cpuPick = ['rock','paper','scissors'][Math.floor(Math.random()*3)];
+  if (!playerPick) { roundResult='miss'; cpuScore++; }
+  else if (playerPick===cpuPick) roundResult='draw';
+  else if ((playerPick==='rock'&&cpuPick==='scissors')||(playerPick==='paper'&&cpuPick==='rock')||(playerPick==='scissors'&&cpuPick==='paper')) { roundResult='win'; playerScore++; }
+  else { roundResult='lose'; cpuScore++; }
+  document.getElementById('ps').textContent = playerScore;
+  document.getElementById('cs').textContent = cpuScore;
+  if (roundResult==='win') SFX.win(); else if (roundResult==='draw') SFX.draw(); else SFX.lose();
+  phase='result'; phaseT=0;
+  if (playerScore>=2 || cpuScore>=2) {
+    setTimeout(()=>{
+      if (playerScore>=2) { finished=true; document.getElementById('round-info').textContent='Tu as gagné le duel !'; document.getElementById('finish-btn').classList.add('show'); }
+      else { document.getElementById('round-info').textContent='Le Pharaon gagne... nouveau duel !'; playerScore=0; cpuScore=0; document.getElementById('ps').textContent=0; document.getElementById('cs').textContent=0; nextRoundAt=performance.now()+1500; }
+    }, 1400);
+  } else {
+    nextRoundAt = performance.now()+1900;
+  }
+}
+
+function update() {
+  phaseT += 1/60;
+  if (phase==='countdown') {
+    // steps ralentis (0.9s chacun) : "Saisho wa..." "JAN" "KEN" "PON!"
+    const step = Math.floor(phaseT/0.9);
+    if (step !== countdownStep && step <= 3) SFX.beep();
+    countdownStep = step;
+    if (step>=4) { phase='capture'; phaseT=0; SFX.go(); }
+  } else if (phase==='capture') {
+    // 2 secondes pour bien montrer/maintenir sa main avant la résolution
+    if (phaseT >= 2.0) resolve();
+  } else if (phase==='result') {
+    if (!finished && playerScore<2 && cpuScore<2 && performance.now()>nextRoundAt) startRound();
+    if (!finished && (playerScore>=2||cpuScore>=2)===false) {}
+  } else if (phase==='wait') {
+    if (performance.now()>nextRoundAt && nextRoundAt>0) startRound();
+  }
+}
+
+function drawHandIcon(x,y,scale,pick,col) {
+  ctx.save(); ctx.translate(x,y); ctx.scale(scale,scale);
+  ctx.fillStyle=col; ctx.strokeStyle='#10070a'; ctx.lineWidth=3;
+  // palm
+  ctx.beginPath(); ctx.roundRect(-30,-10,60,55,12); ctx.fill(); ctx.stroke();
+  if (pick==='paper') {
+    for (let i=0;i<4;i++){ ctx.beginPath(); ctx.roundRect(-28+i*15,-58,12,52,6); ctx.fill(); ctx.stroke(); }
+    ctx.beginPath(); ctx.roundRect(-44,-4,18,30,8); ctx.fill(); ctx.stroke();
+  } else if (pick==='scissors') {
+    ctx.beginPath(); ctx.roundRect(-28,-58,12,52,6); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(-10,-58,12,52,6); ctx.fill(); ctx.stroke();
+    // folded
+    ctx.beginPath(); ctx.roundRect(8,-6,14,18,5); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(-44,-4,18,30,8); ctx.fill(); ctx.stroke();
+  } else { // rock
+    ctx.beginPath(); ctx.roundRect(-30,-22,60,30,14); ctx.fill(); ctx.stroke();
+    for (let i=0;i<4;i++){ ctx.beginPath(); ctx.arc(-20+i*13,-22,7,0,Math.PI*2); ctx.fill(); ctx.stroke(); }
+  }
+  ctx.restore();
+}
+
+function draw() {
+  frame++;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.fillStyle='rgba(12,6,34,0.4)'; ctx.fillRect(0,0,cv.width,cv.height);
+
+  // duel arena floor glow
+  ctx.save(); const cxp=cv.width/2, cyp=cv.height*0.62;
+  for (let i=0;i<3;i++){ ctx.strokeStyle=`rgba(157,78,221,${0.4-i*0.1+0.15*Math.sin(frame*0.05+i)})`; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(cxp,cyp,180+i*70,50+i*20,0,0,Math.PI*2); ctx.stroke(); }
+  ctx.restore();
+
+  if (started) {
+    update();
+    // Player side (left) live gesture
+    const live = stableGesture();
+    ctx.fillStyle='#c9a3ff'; ctx.font='bold 16px Inter'; ctx.textAlign='center';
+    ctx.fillText('TOI', cv.width*0.26, cv.height*0.32);
+    drawHandIcon(cv.width*0.26, cv.height*0.5, 1.4, (phase==='result'?playerPick:live)||'rock', live||phase==='result'?'#f4c28a':'rgba(244,194,138,0.4)');
+    if (!live && phase!=='result') { ctx.fillStyle='rgba(255,107,107,0.9)'; ctx.font='13px Inter'; ctx.fillText('Montre ta main ✊✋✌️', cv.width*0.26, cv.height*0.7); }
+
+    // Pharaoh side (right)
+    ctx.fillStyle='#ffd700'; ctx.font='bold 16px Inter'; ctx.fillText('PHARAON', cv.width*0.74, cv.height*0.32);
+    drawPharaoh(cv.width*0.74, cv.height*0.42);
+    if (phase==='result') drawHandIcon(cv.width*0.74, cv.height*0.6, 1.4, cpuPick, '#d8b878');
+    else { // hidden hand
+      ctx.save(); ctx.translate(cv.width*0.74, cv.height*0.6); ctx.fillStyle='rgba(157,78,221,0.4)'; ctx.font='60px Inter'; ctx.textAlign='center'; ctx.fillText('?', 0, 20); ctx.restore();
+    }
+
+    // Center text
+    ctx.textAlign='center';
+    let big='', sub='';
+    if (phase==='countdown') {
+      const steps=['SAISHO WA…','JAN','KEN','PON !'];
+      big = steps[Math.min(countdownStep,3)];
+    } else if (phase==='capture') {
+      big = 'MONTRE TA MAIN !';
+      const remain = Math.max(0, 2.0 - phaseT);
+      sub = `Verrouillage dans ${remain.toFixed(1)}s — ${live ? NAMES[live] : 'aucune main'}`;
+      // timer ring
+      ctx.save(); ctx.strokeStyle='#ffd700'; ctx.lineWidth=5; ctx.shadowColor='#ffd700'; ctx.shadowBlur=14;
+      ctx.beginPath(); ctx.arc(cv.width/2, cv.height*0.62, 40, -Math.PI/2, -Math.PI/2 + (phaseT/2.0)*Math.PI*2); ctx.stroke(); ctx.restore();
+    } else if (phase==='result') {
+      sub = `${EMO[playerPick]||'?'} vs ${EMO[cpuPick]}`;
+      if (roundResult==='win') big='GAGNÉ !';
+      else if (roundResult==='lose') big='PERDU…';
+      else if (roundResult==='draw') big='ÉGALITÉ';
+      else big='RATÉ ! (aucune main)';
+    } else if (phase==='wait') big='PRÊT ?';
+    ctx.fillStyle='#fff'; ctx.font="900 56px 'Bangers',sans-serif"; ctx.shadowColor='#9d4edd'; ctx.shadowBlur=24;
+    ctx.fillText(big, cv.width/2, cv.height*0.46); ctx.shadowBlur=0;
+    if (sub){ ctx.font='22px Inter'; ctx.fillStyle='#c9a3ff'; ctx.fillText(sub, cv.width/2, cv.height*0.52); }
+
+    document.getElementById('round-info').textContent =
+      phase==='countdown' ? 'Prépare ta main…' : phase==='result' ? (roundResult==='win'?'Bien joué !':roundResult==='draw'?'Rejoue !':'Concentre-toi') : document.getElementById('round-info').textContent;
+  }
+  requestAnimationFrame(draw);
+}
+
+function drawPharaoh(x,y){
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle='#2a2a4a'; ctx.strokeStyle='#10070a'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.roundRect(-30,-20,60,90,8); ctx.fill(); ctx.stroke();
+  // millennium puzzle
+  ctx.fillStyle='#e8c64a'; ctx.beginPath(); ctx.moveTo(0,10); ctx.lineTo(-14,-6); ctx.lineTo(14,-6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#1a1a3a'; ctx.beginPath(); ctx.arc(0,5,4,0,Math.PI*2); ctx.fill();
+  // head
+  ctx.fillStyle='#f0c8a0'; ctx.beginPath(); ctx.ellipse(0,-40,20,23,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  // tri-color star hair
+  ctx.fillStyle='#1a1a3a'; ctx.beginPath();
+  for (let i=0;i<6;i++){ const xx=-22+i*8; ctx.moveTo(xx,-46); ctx.lineTo(xx+3,-78); ctx.lineTo(xx+7,-46); } ctx.fill();
+  ctx.fillStyle='#9d4edd'; for (let i=0;i<4;i++) ctx.fillRect(-18+i*10,-56,4,10);
+  // glowing eyes
+  ctx.fillStyle='#ffd700'; ctx.shadowColor='#ffd700'; ctx.shadowBlur=8;
+  ctx.beginPath(); ctx.arc(-7,-40,3,0,Math.PI*2); ctx.arc(7,-40,3,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+async function getSharedStream() {
+  if (window.__mangaStream && window.__mangaStream.active) return window.__mangaStream;
+  try { const P = window.parent; if (P && P.__mangaStream && P.__mangaStream.active) return P.__mangaStream; } catch(e){}
+  return await navigator.mediaDevices.getUserMedia({ video:{width:640,height:480,facingMode:'user'}, audio:true });
+}
+(async () => {
+  const err = document.getElementById('err');
+  try {
+    const stream = await getSharedStream();
+    const vstream = new MediaStream(stream.getVideoTracks());
+    cam.srcObject = vstream; cam2.srcObject = vstream;
+    await cam.play();
+    const handPose = ml5.handPose({ maxHands: 1, runtime: 'mediapipe', flipped: false }, () => {
+      handPose.detectStart(cam, gotHandsML5);
+      document.getElementById('startBtn').textContent = 'DUEL ▶';
+      document.getElementById('startBtn').disabled = false;
+    });
+  } catch(e){ err.textContent='Erreur caméra : '+(e.message||e); }
+})();
+document.getElementById('startBtn').onclick = () => { ac(); document.getElementById('prompt').style.display='none'; started=true; nextRoundAt = performance.now()+1200; phase='wait'; };
+document.getElementById('finish-btn').onclick = () => { try { window.parent.postMessage({ type:'interaction-complete', id:'yugioh' }, '*'); } catch(e){} };
+draw();
+</script>
+<script src="mouse-fallback.js"></script>
+</body>
+</html>

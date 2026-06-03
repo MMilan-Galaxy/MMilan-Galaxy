@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Hand Pose Detection</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; }
+  </style>
+</head>
+<body>
+<script>
+let handPose;
+let video;
+let hands = [];
+
+// Connexions entre les keypoints pour dessiner le squelette
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],          // pouce
+  [0,5],[5,6],[6,7],[7,8],          // index
+  [0,9],[9,10],[10,11],[11,12],     // majeur
+  [0,13],[13,14],[14,15],[15,16],   // annulaire
+  [0,17],[17,18],[18,19],[19,20],   // auriculaire
+  [5,9],[9,13],[13,17]              // paume
+];
+
+// Couleur par doigt : pouce, index, majeur, annulaire, auriculaire
+const FINGER_COLORS = [
+  [255,100,100], // pouce        — rouge
+  [255,200,50],  // index        — jaune
+  [50,255,130],  // majeur       — vert
+  [50,180,255],  // annulaire    — bleu
+  [200,80,255],  // auriculaire  — violet
+];
+
+// Keypoints 0–4 = pouce, 5–8 = index, 9–12 = majeur, 13–16 = annulaire, 17–20 = auriculaire
+function fingerColor(j) {
+  if (j === 0) return [200, 200, 200]; // poignet = gris
+  return FINGER_COLORS[floor((j - 1) / 4)];
+}
+
+function preload() {
+  handPose = ml5.handPose({ flipped: true });
+}
+
+function setup() {
+  createCanvas(640, 480);
+  textFont('monospace');
+
+  video = createCapture(VIDEO, { flipped: true });
+  video.size(640, 480);
+  video.hide();
+
+  handPose.detectStart(video, gotHands);
+}
+
+function gotHands(results) {
+  hands = results;
+}
+
+function draw() {
+  image(video, 0, 0, width, height);
+
+  for (let hand of hands) {
+    let kps = hand.keypoints;
+
+    // Squelette
+    strokeWeight(2);
+    noFill();
+    for (let [a, b] of CONNECTIONS) {
+      let ca = fingerColor(a);
+      let cb = fingerColor(b);
+      stroke(lerp(ca[0],cb[0],.5), lerp(ca[1],cb[1],.5), lerp(ca[2],cb[2],.5), 200);
+      line(kps[a].x, kps[a].y, kps[b].x, kps[b].y);
+    }
+
+    // Points
+    for (let j = 0; j < kps.length; j++) {
+      let kp = kps[j];
+      let c = fingerColor(j);
+
+      // Halo
+      noStroke();
+      fill(c[0], c[1], c[2], 60);
+      ellipse(kp.x, kp.y, 22, 22);
+
+      // Cercle plein
+      fill(c[0], c[1], c[2]);
+      stroke(255, 255, 255, 180);
+      strokeWeight(1.2);
+      ellipse(kp.x, kp.y, 10, 10);
+
+      // Nom du point
+      noStroke();
+      fill(255);
+      textSize(8);
+      textAlign(LEFT, CENTER);
+      text(kp.name, kp.x + 8, kp.y);
+    }
+
+    // Étiquette main gauche/droite + score confiance
+    let wx = kps[0].x, wy = kps[0].y;
+    fill(0, 0, 0, 160);
+    noStroke();
+    rect(wx - 2, wy + 14, 110, 16, 3);
+    fill(255, 220, 50);
+    textSize(9);
+    textAlign(LEFT);
+    text(hand.handedness + '  ' + nf(hand.confidence, 1, 2), wx, wy + 22);
+  }
+
+  // Compteur de mains détectées
+  fill(0, 0, 0, 140);
+  noStroke();
+  rect(8, 8, 190, 22, 4);
+  fill(180, 255, 180);
+  textSize(11);
+  textAlign(LEFT);
+  text('Mains détectées : ' + hands.length, 14, 22);
+}
+</script>
+</body>
+</html>

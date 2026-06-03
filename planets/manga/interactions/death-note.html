@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Death Note</title>
+<script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
+  body { background:#04060a; overflow:hidden; height:100vh; font-family:'Inter',sans-serif; color:#e8e8ee; }
+  #cam { position:absolute; inset:0; width:100vw; height:100vh; object-fit:cover; transform:scaleX(-1); opacity:0.5; }
+  #cv { position:absolute; inset:0; }
+  #hud { position:fixed; top:0; left:0; right:0; padding:28px 40px; display:flex; justify-content:space-between; z-index:5; pointer-events:none; }
+  #title { font-family:'Bangers',sans-serif; font-size:34px; letter-spacing:4px; color:#c41e3a; text-shadow:0 0 24px #c41e3a; }
+  #title small { display:block; font-family:'Inter'; font-weight:400; font-size:12px; color:#8a8a99; letter-spacing:2px; margin-top:4px; }
+  #status { font-size:13px; letter-spacing:2px; text-transform:uppercase; color:#8a8a99; text-align:right; }
+  #cambox { position:fixed; bottom:26px; right:26px; width:200px; height:150px; border:1px solid #c41e3a; z-index:6; overflow:hidden; box-shadow:0 0 20px rgba(196,30,58,0.4); }
+  #cambox video, #cambox canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  #finish-btn, #startBtn { background:#c41e3a; color:#fff; border:2px solid #c41e3a; padding:14px 40px; font-family:'Bangers',sans-serif; letter-spacing:3px; font-size:20px; cursor:pointer; z-index:20; clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px); }
+  #finish-btn { position:fixed; bottom:40px; left:50%; transform:translateX(-50%); display:none; box-shadow:0 0 30px #c41e3a; }
+  #finish-btn.show { display:block; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 30px #c41e3a;} 50%{box-shadow:0 0 60px #fff;} }
+  #prompt { position:fixed; inset:0; background:rgba(4,6,10,0.95); z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:20px; }
+  #prompt h2 { font-family:'Bangers',sans-serif; font-size:46px; color:#c41e3a; letter-spacing:4px; }
+  #prompt p { color:#9a9aa6; max-width:540px; line-height:1.6; }
+  #err { color:#ff6b6b; font-size:13px; min-height:18px; }
+  #kanji { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:8; pointer-events:none; }
+  #kanji .k { font-family:serif; font-weight:900; font-size:240px; color:#c41e3a; text-shadow:0 0 60px #c41e3a; }
+</style>
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <div id="title">DEATH NOTE<small>Trace chaque trait du nom avec ton index en l'air</small></div>
+  <div id="status">Index : <strong id="hand-status">—</strong></div>
+</div>
+
+<div id="cambox"><video id="cam2" autoplay playsinline muted></video><canvas id="camcv"></canvas></div>
+<div id="kanji"><div class="k">死</div></div>
+<button id="finish-btn">TERMINER ✦</button>
+
+<div id="prompt">
+  <h2>L'HUMAIN DONT LE NOM SERA ÉCRIT…</h2>
+  <p>« …mourra. » — Trace le nom <strong>KIRA</strong> en suivant les points lumineux dans l'ordre. Lève l'<strong>index</strong> face à la caméra et déplace-le pour relier chaque point. Ryuk observe…</p>
+  <button id="startBtn">SAISIR LE STYLO</button>
+  <div id="err"></div>
+</div>
+
+<script>
+const cam = document.getElementById('cam');
+const cam2 = document.getElementById('cam2');
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const camcv = document.getElementById('camcv');
+const camctx = camcv.getContext('2d');
+const handStatus = document.getElementById('hand-status');
+
+let hands = null, started = false, finished = false, frame = 0;
+let fingertip = null;       // {x,y} screen
+let trail = [];
+let wp = 0;                 // current waypoint index
+const HC = (typeof HAND_CONNECTIONS !== 'undefined') ? HAND_CONNECTIONS :
+  [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+// ─── SFX ───
+let _ac=null; function ac(){ if(!_ac)_ac=new(window.AudioContext||window.webkitAudioContext)(); if(_ac.state==='suspended')_ac.resume(); return _ac; }
+function snd(f,t,d,v){ try{const a=ac(),o=a.createOscillator(),g=a.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+d);}catch(e){} }
+function noise(d,v,lo,hi){ try{const a=ac();const b=a.createBuffer(1,a.sampleRate*d,a.sampleRate);const dt=b.getChannelData(0);for(let i=0;i<dt.length;i++)dt[i]=(Math.random()*2-1)*(1-i/dt.length);const s=a.createBufferSource();s.buffer=b;const f=a.createBiquadFilter();f.type='bandpass';f.frequency.value=(lo+hi)/2;const g=a.createGain();g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);s.connect(f);f.connect(g);g.connect(a.destination);s.start();}catch(e){} }
+const SFX = {
+  stroke(i){ snd(300 + i*16, 'sawtooth', 0.06, 0.05); noise(0.05,0.03,1500,3000); },
+  win(){ snd(110,'sawtooth',1.2,0.16); setTimeout(()=>{ // Ryuk laugh: descending "hyuk hyuk"
+    [400,360,300,260].forEach((f,i)=>setTimeout(()=>{ snd(f,'square',0.12,0.1); },i*180)); }, 300); },
+};
+
+function resize(){ cv.width = innerWidth; cv.height = innerHeight; }
+addEventListener('resize', resize); resize();
+
+// ─── Build the word KIRA as ordered waypoints ───
+const LETTERS = {
+  K: [[0,0],[0,1],[0,0.5],[1,0],[0,0.5],[1,1]],
+  I: [[0.5,0],[0.5,1]],
+  R: [[0,1],[0,0],[1,0.25],[0,0.5],[1,1]],
+  A: [[0,1],[0.5,0],[1,1],[0.78,0.55],[0.22,0.55]],
+};
+const WORD = ['K','I','R','A'];
+function buildWaypoints() {
+  const pts = [];
+  const n = WORD.length, cellW = 0.13, gap = 0.045;
+  const totalW = n * cellW + (n-1) * gap;
+  const startX = 0.5 - totalW/2;
+  const bandY = 0.34, bandH = 0.30;
+  WORD.forEach((ch, i) => {
+    const cx0 = startX + i*(cellW+gap);
+    for (const [lx,ly] of LETTERS[ch]) {
+      pts.push({ x: cx0 + lx*cellW, y: bandY + ly*bandH, done: false });
+    }
+  });
+  return pts;
+}
+let waypoints = buildWaypoints();
+function S(p){ return { x: p.x * cv.width, y: p.y * cv.height }; }
+
+// ─── Hand detection ───
+// Adapteur ml5 handPose → format MediaPipe
+function gotHandsML5(results) {
+  const vw = cam.videoWidth || 640, vh = cam.videoHeight || 480;
+  const multiHandLandmarks = (results || []).map(h => h.keypoints.map(k => ({ x: k.x / vw, y: k.y / vh })));
+  onHands({ multiHandLandmarks });
+}
+function onHands(res) {
+  // mini cam skeleton
+  camcv.width = cam2.videoWidth || 640; camcv.height = cam2.videoHeight || 480;
+  camctx.clearRect(0,0,camcv.width,camcv.height);
+  if (res.multiHandLandmarks && res.multiHandLandmarks.length) {
+    const lm = res.multiHandLandmarks[0];
+    hands = lm;
+    // draw skeleton mini
+    camctx.strokeStyle = '#c41e3a'; camctx.lineWidth = 2;
+    camctx.fillStyle = '#ff5050';
+    for (const c of HC) { camctx.beginPath(); camctx.moveTo(lm[c[0]].x*camcv.width, lm[c[0]].y*camcv.height); camctx.lineTo(lm[c[1]].x*camcv.width, lm[c[1]].y*camcv.height); camctx.stroke(); }
+    // fingertip 8 mapped to full-screen mirrored
+    fingertip = { x: (1 - lm[8].x) * cv.width, y: lm[8].y * cv.height };
+    // index extended? (tip above pip)
+    const extended = lm[8].y < lm[6].y;
+    handStatus.textContent = extended ? 'STYLO ACTIF' : 'LÈVE L\'INDEX';
+    handStatus.style.color = extended ? '#c41e3a' : '#8a8a99';
+  } else { hands = null; fingertip = null; handStatus.textContent = 'NON DÉTECTÉ'; handStatus.style.color='#ff6b6b'; }
+}
+
+function update() {
+  if (!fingertip || finished) return;
+  trail.push({ x: fingertip.x, y: fingertip.y, life: 1 });
+  if (trail.length > 60) trail.shift();
+  // check current waypoint
+  if (wp < waypoints.length) {
+    const t = S(waypoints[wp]);
+    if (Math.hypot(fingertip.x - t.x, fingertip.y - t.y) < 52) {
+      waypoints[wp].done = true; SFX.stroke(wp); wp++;
+      if (wp >= waypoints.length) win();
+    }
+  }
+}
+
+function win() {
+  finished = true;
+  SFX.win();
+  document.getElementById('kanji').style.display = 'flex';
+  setTimeout(() => { document.getElementById('kanji').style.display = 'none'; }, 1800);
+  document.getElementById('finish-btn').classList.add('show');
+}
+
+function draw() {
+  frame++;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // dark vignette mood
+  const g = ctx.createRadialGradient(cv.width/2, cv.height/2, 100, cv.width/2, cv.height/2, cv.width*0.7);
+  g.addColorStop(0,'rgba(4,6,10,0.2)'); g.addColorStop(1,'rgba(0,0,0,0.85)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,cv.width,cv.height);
+
+  // Notebook page panel
+  const pw = Math.min(cv.width*0.7, 900), ph = pw*0.42, pxx = (cv.width-pw)/2, pyy = cv.height*0.28;
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,20,24,0.85)'; ctx.strokeStyle = '#c41e3a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(pxx, pyy, pw, ph, 6); ctx.fill(); ctx.stroke();
+  // lines
+  ctx.strokeStyle = 'rgba(196,30,58,0.18)'; ctx.lineWidth = 1;
+  for (let i=1;i<6;i++){ const y = pyy + i*ph/6; ctx.beginPath(); ctx.moveTo(pxx+20, y); ctx.lineTo(pxx+pw-20, y); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 14px Inter'; ctx.textAlign='left';
+  ctx.fillText('DEATH NOTE — 名前を書く', pxx+22, pyy+26);
+  ctx.restore();
+
+  if (started) {
+    update();
+    // draw waypoints + path
+    ctx.save();
+    // completed strokes (red ink, connect consecutive done points within same letter run)
+    for (let i=0;i<waypoints.length;i++){
+      const p = S(waypoints[i]);
+      const isCur = i === wp;
+      if (waypoints[i].done) {
+        ctx.fillStyle = '#c41e3a'; ctx.shadowColor='#c41e3a'; ctx.shadowBlur=10;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+      } else if (isCur) {
+        const r = 14 + Math.sin(frame*0.15)*4;
+        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 3; ctx.shadowColor='#ffd24a'; ctx.shadowBlur=16;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.stroke();
+        ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+        // number
+        ctx.fillStyle='#000'; ctx.font='bold 10px Inter'; ctx.textAlign='center'; ctx.fillText('✎', p.x, p.y+4);
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
+      }
+    }
+    // connect done points sequentially (the written name)
+    ctx.strokeStyle = 'rgba(196,30,58,0.9)'; ctx.lineWidth = 4; ctx.shadowColor='#c41e3a'; ctx.shadowBlur=8; ctx.lineCap='round';
+    ctx.beginPath();
+    let started2=false;
+    for (let i=0;i<wp;i++){ const p=S(waypoints[i]); if(!started2){ctx.moveTo(p.x,p.y);started2=true;} else ctx.lineTo(p.x,p.y); }
+    ctx.stroke(); ctx.shadowBlur=0;
+    ctx.restore();
+
+    // ink trail
+    for (let i=0;i<trail.length;i++){ const t=trail[i]; t.life -= 0.016; if(t.life<=0) continue;
+      ctx.fillStyle = `rgba(196,30,58,${t.life*0.5})`; ctx.beginPath(); ctx.arc(t.x, t.y, 3, 0, Math.PI*2); ctx.fill(); }
+    // pen tip
+    if (fingertip) {
+      ctx.save(); ctx.shadowColor='#c41e3a'; ctx.shadowBlur=14; ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(fingertip.x, fingertip.y, 6, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    // progress
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='12px Inter'; ctx.textAlign='center';
+    ctx.fillText(`${wp} / ${waypoints.length} traits`, cv.width/2, pyy+ph+34);
+  }
+
+  // Ryuk silhouette right side
+  drawRyuk(cv.width*0.86, cv.height*0.55);
+  requestAnimationFrame(draw);
+}
+
+function drawRyuk(x,y){
+  ctx.save(); ctx.translate(x,y);
+  const sway = Math.sin(frame*0.04)*8; ctx.translate(sway,0);
+  ctx.fillStyle = 'rgba(8,8,12,0.92)'; ctx.strokeStyle='#1a1a22'; ctx.lineWidth=2;
+  // body
+  ctx.beginPath(); ctx.moveTo(-30,120); ctx.lineTo(-22,-60); ctx.lineTo(22,-60); ctx.lineTo(30,120); ctx.closePath(); ctx.fill();
+  // spiky shoulders
+  ctx.beginPath(); ctx.moveTo(-22,-50); ctx.lineTo(-44,-66); ctx.lineTo(-18,-40); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(22,-50); ctx.lineTo(44,-66); ctx.lineTo(18,-40); ctx.fill();
+  // head
+  ctx.beginPath(); ctx.ellipse(0,-86,22,26,0,0,Math.PI*2); ctx.fill();
+  // eyes glow
+  ctx.fillStyle='#ffd24a'; ctx.shadowColor='#ffd24a'; ctx.shadowBlur=14;
+  ctx.beginPath(); ctx.arc(-8,-88,4,0,Math.PI*2); ctx.arc(8,-88,4,0,Math.PI*2); ctx.fill();
+  // grin
+  ctx.shadowBlur=0; ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,-78,12,0.1,Math.PI-0.1); ctx.stroke();
+  ctx.restore();
+}
+
+// ─── Bootstrap ───
+async function getSharedStream() {
+  if (window.__mangaStream && window.__mangaStream.active) return window.__mangaStream;
+  try { const P = window.parent; if (P && P.__mangaStream && P.__mangaStream.active) return P.__mangaStream; } catch(e){}
+  return await navigator.mediaDevices.getUserMedia({ video:{width:640,height:480,facingMode:'user'}, audio:true });
+}
+(async () => {
+  const err = document.getElementById('err');
+  try {
+    const stream = await getSharedStream();
+    const vstream = new MediaStream(stream.getVideoTracks());
+    cam.srcObject = vstream; cam2.srcObject = vstream;
+    await cam.play();
+    const handPose = ml5.handPose({ maxHands: 1, runtime: 'mediapipe', flipped: false }, () => {
+      handPose.detectStart(cam, gotHandsML5);
+      document.getElementById('startBtn').textContent = 'SAISIR LE STYLO ▶';
+      document.getElementById('startBtn').disabled = false;
+    });
+  } catch (e) { err.textContent = 'Erreur caméra : ' + (e.message || e); }
+})();
+document.getElementById('startBtn').onclick = () => { ac(); document.getElementById('prompt').style.display = 'none'; started = true; };
+document.getElementById('finish-btn').onclick = () => { try { window.parent.postMessage({ type:'interaction-complete', id:'deathnote' }, '*'); } catch(e){} };
+draw();
+</script>
+<script src="mouse-fallback.js"></script>
+</body>
+</html>

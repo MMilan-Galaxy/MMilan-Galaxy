@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dance Dance Revolution</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #0a0a19; width: 5760px; height: 1200px; }
+        canvas { display: block; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <canvas id="disco1" style="position:fixed;left:0;top:0;width:1920px;height:1200px;pointer-events:none;"></canvas>
+    <canvas id="disco3" style="position:fixed;left:3840px;top:0;width:1920px;height:1200px;pointer-events:none;"></canvas>
+
+    <script>
+        // --- CONFIGURATION ---
+        let autoCloseTimer = 0;
+        let W, H, GAME_W, CAM_W;
+        let LANES;
+        let TARGET_Y;
+        const HIT_RANGE = 75;
+        const BPM = 110;
+        const BEAT_MS = 60000 / BPM;
+
+        // --- VARIABLES ---
+        let arrows = [], feedbacks = [], particles = [];
+        let score = 0, combo = 0, timeLeft = 30;
+        let gameStarted = false, gameOver = false;
+        let lastSecond = 0, lastBeat = 0;
+        let lanePress = {};
+        let lastHitKey = null;
+        let danceTimer = 0;
+        let cristalDonne = false; 
+
+        function setup() {
+            W = 1920; 
+            H = 1200;
+            GAME_W = floor(W * 0.6);
+            CAM_W  = W - GAME_W;
+            TARGET_Y = floor(H * 0.82);
+
+            let cnv = createCanvas(W, H);
+            cnv.style('display', 'block');
+            cnv.position(1920, 0);
+            initLanes();
+            textFont('monospace');
+        }
+
+        function initLanes() {
+            LANES = [
+                { key: 'ArrowLeft',  label: '←', x: floor(GAME_W * 0.2), color: '#e74c3c' },
+                { key: 'ArrowDown',  label: '↓', x: floor(GAME_W * 0.4), color: '#2ecc71' },
+                { key: 'ArrowUp',    label: '↑', x: floor(GAME_W * 0.6), color: '#3498db' },
+                { key: 'ArrowRight', label: '→', x: floor(GAME_W * 0.8), color: '#f39c12' },
+            ];
+        }
+
+        function draw() {
+            background(0);
+
+            // Dessin de la zone de droite (Cam/Dancer Side)
+            noStroke(); fill(30, 30, 55);
+            rect(GAME_W, 0, CAM_W, H);
+
+            if (!gameStarted) { drawTitle(); return; }
+            if (gameOver) { drawGameOver(); return; }
+
+            handleLogic();
+            
+            // Fond de la zone de jeu gauche
+            noStroke(); fill(22, 22, 48);
+            rect(0, 0, GAME_W, H);
+
+            // Séparateur vertical net
+            stroke(255, 40); strokeWeight(2);
+            line(GAME_W, 0, GAME_W, H);
+
+            drawLanes();
+            drawArrows();
+            drawFX();
+            drawHUD();
+
+            // Positionnement du stickman parfaitement CENTRÉ à droite (CAM_W * 0.5)
+            push();
+            let bx = GAME_W + (CAM_W * 0.5);
+            let by = H * 0.78;
+            translate(bx, by); 
+            let scaleFactor = min(W, H) / 550;
+            scale(scaleFactor); 
+            drawDancer();
+            pop();
+        }
+
+        // --- GESTION DES INTERACTIONS ---
+        function mousePressed() {
+            if (!gameStarted) { 
+                gameStarted = true; 
+                let startMoment = millis();
+                lastBeat = startMoment; 
+                lastSecond = startMoment; 
+            }
+        }
+
+        function keyPressed() {
+            if (gameOver && keyCode === ENTER) { resetGame(); return; }
+            if (!gameStarted) return;
+
+            let lane = LANES.find(l => l.key === key);
+            if (!lane) return;
+
+            lanePress[lane.key] = 10;
+            let best = arrows.find(a => a.key === key && !a.hit && !a.miss && abs(a.y - TARGET_Y) < HIT_RANGE);
+
+            if (best) {
+                best.hit = true;
+                combo++;
+                score += 100 * (1 + floor(combo/10));
+                feedbacks.push({ x: best.x, y: TARGET_Y - 70, txt: "PERFECT", col: lane.color, life: 1 });
+                lastHitKey = key;
+                danceTimer = 20; 
+                for(let i=0; i<10; i++) {
+                    particles.push({ 
+                        x: best.x, 
+                        y: TARGET_Y, 
+                        vx: random(-5, 5), 
+                        vy: random(-6, -1), 
+                        col: lane.color, 
+                        life: 1 
+                    });
+                }
+            }
+        }
+
+        // --- LOGIQUE ET DESSIN ---
+        function handleLogic() {
+            let now = millis();
+            if (now - lastSecond > 1000) {
+                timeLeft--;
+                lastSecond = now;
+                if (timeLeft <= 0) gameOver = true;
+            }
+            if (now - lastBeat > BEAT_MS) {
+                lastBeat = now;
+                spawnSingleArrow();
+            }
+            if (danceTimer > 0) danceTimer--;
+        }
+
+        function spawnSingleArrow() {
+            let lane = random(LANES);
+            arrows.push({
+                x: lane.x, y: -50, color: lane.color, key: lane.key, 
+                label: lane.label, speed: 8 + (score / 12000),
+                hit: false, miss: false, alpha: 255
+            });
+        }
+
+        function drawDancer() {
+            let currentConfig = LANES.find(l => l.key === lastHitKey);
+            let dancerColor = currentConfig ? currentConfig.color : '#ffffff';
+            
+            stroke(color(dancerColor + '44')); strokeWeight(16); noFill();
+            drawStickmanPose(lastHitKey, danceTimer);
+            
+            stroke(dancerColor); strokeWeight(5);
+            drawStickmanPose(lastHitKey, danceTimer);
+        }
+
+        function drawStickmanPose(key, timer) {
+            let pose = (timer > 0) ? key : 'neutre';
+            circle(0, -100, 50); line(0, -75, 0, 30); 
+            let lArmX = -55, lArmY = -30, rArmX = 55, rArmY = -30;
+            let lLegX = -30, lLegY = 110, rLegX = 30, rLegY = 110;
+            
+            if (pose === 'ArrowLeft')  { lArmX = -90; lArmY = -70; rArmX = 20;  rArmY = 10;  }
+            if (pose === 'ArrowRight') { rArmX = 90;  rArmY = -70; lArmX = -20; lArmY = 10;  }
+            if (pose === 'ArrowUp')    { lArmY = -160; rArmY = -160; lArmX = -40; rArmX = 40; }
+            if (pose === 'ArrowDown')  { lLegX = -65; rLegX = 65; lLegY = 70; rLegY = 70; lArmY = 20; rArmY = 20; }
+            
+            line(0, -50, lArmX, lArmY); line(0, -50, rArmX, rArmY);
+            line(0, 30, lLegX, lLegY); line(0, 30, rLegX, rLegY);
+        }
+
+        function drawLanes() {
+            LANES.forEach(l => {
+                let pressed = lanePress[l.key] > 0;
+                stroke(l.color + '22'); strokeWeight(1); line(l.x, 0, l.x, H);
+                
+                stroke(l.color + (pressed ? 'ff' : '66'));
+                strokeWeight(pressed ? 7 : 3); noFill(); 
+                circle(l.x, TARGET_Y, 85);
+                
+                fill(l.color + (pressed ? 'ff' : 'bb')); noStroke();
+                textAlign(CENTER, CENTER); textSize(38); text(l.label, l.x, TARGET_Y);
+                if (lanePress[l.key] > 0) lanePress[l.key]--;
+            });
+        }
+
+        function drawArrows() {
+            noStroke();
+            const dt = deltaTime / 16.67;
+            arrows.forEach((a) => {
+                if (!a.hit && !a.miss) a.y += a.speed * dt;
+                if (!a.hit && !a.miss && a.y > TARGET_Y + HIT_RANGE) {
+                    a.miss = true; combo = 0;
+                    feedbacks.push({ x: a.x, y: TARGET_Y, txt: "MISS", col: "#ff4757", life: 1 });
+                }
+                if (a.alpha > 0) {
+                    let c = color(a.color);
+                    fill(255, 255, 255, a.alpha * 0.3);
+                    textSize(a.hit ? 75 : 55);
+                    textAlign(CENTER, CENTER);
+                    text(a.label, a.x + 3, a.y + 3);
+
+                    fill(red(c), green(c), blue(c), a.alpha);
+                    text(a.label, a.x, a.y);
+                    if (a.hit || a.miss) a.alpha -= 22;
+                }
+            });
+            arrows = arrows.filter(a => a.alpha > 0);
+        }
+
+        function drawHUD() {
+            noStroke();
+            fill(0, 0, 0, 120);
+            rect(12, 12, 300, 90, 10);
+            rect(GAME_W - 130, 12, 118, 55, 10);
+
+            fill(255); textSize(28); textAlign(LEFT);
+            text("SCORE: " + score, 28, 46);
+            fill(255, 200, 0);
+            text("COMBO: " + combo, 28, 84);
+
+            fill(255); textAlign(RIGHT); textSize(28);
+            text(timeLeft + "s", GAME_W - 20, 50);
+        }
+
+        function drawFX() {
+            noStroke();
+            const dt = deltaTime / 16.67;
+            particles.forEach(p => {
+                p.x += p.vx * dt; p.y += p.vy * dt; p.life -= 0.04 * dt;
+                fill(red(color(p.col)), green(color(p.col)), blue(color(p.col)), p.life * 255);
+                circle(p.x, p.y, 12 * p.life);
+            });
+            particles = particles.filter(p => p.life > 0);
+            
+            feedbacks.forEach(f => {
+                f.y -= 2 * dt; f.life -= 0.025 * dt;
+                fill(red(color(f.col)), green(color(f.col)), blue(color(f.col)), f.life * 255);
+                textSize(32); textAlign(CENTER);
+                text(f.txt, f.x, f.y);
+            });
+            feedbacks = feedbacks.filter(f => f.life > 0);
+        }
+
+        function drawTitle() {
+            noStroke(); fill(22, 22, 48);
+            rect(0, 0, GAME_W, H);
+
+            fill(255); textAlign(CENTER); 
+            textSize(50); text("Dance Dance Revolution", GAME_W / 2, H / 2 - 220);
+            
+            // --- REGLES DU JEU (AGRANDIES) ---
+            textSize(28); fill(200, 200, 255);
+            text("RÈGLES DU JEU :", GAME_W / 2, H / 2 - 110);
+            
+            textSize(22); fill(255, 220);
+            text("Utilisez les FLÈCHES de votre clavier (← ↓ ↑ →) pour jouer.", GAME_W / 2, H / 2 - 60);
+            text("Appuyez en rythme au moment précis où les flèches croisent les cercles du bas.", GAME_W / 2, H / 2 - 20);
+            text("Atteignez un score minimum de 3000 points en 30 secondes pour gagner !", GAME_W / 2, H / 2 + 30);
+            
+            // Bouton pour lancer la partie
+            textSize(26); fill(0, 220, 180);
+            text("Cliquez ici pour jouer", GAME_W / 2, H / 2 + 130);
+        }
+
+        
+
+        function drawGameOver() {
+            noStroke(); fill(22, 22, 48);
+            rect(0, 0, GAME_W, H);
+
+            fill(15, 15, 40, 210);
+            rect(GAME_W * 0.05, H * 0.28, GAME_W * 0.9, H * 0.44, 20);
+
+            textAlign(CENTER, CENTER);
+            let win = score >= 3000;
+            if (win && !cristalDonne) {
+                if (window.parent && window.parent.addCrystals) {
+                    window.parent.addCrystals(1);
+                    cristalDonne = true;
+                }
+            }
+            if (autoCloseTimer === 0) autoCloseTimer = frameCount + 180; 
+            
+            fill(win ? '#2ecc71' : '#e74c3c');
+            textSize(80); text(win ? "VICTOIRE !" : "GAME OVER", GAME_W / 2, H / 2 - 60);
+            
+            fill(255);
+            textSize(40); text("SCORE FINAL : " + score, GAME_W / 2, H / 2 + 40);
+            textSize(20); fill(255, 150); 
+            text("Fermeture dans " + floor(max(0, (autoCloseTimer - frameCount)/60)) + "s...", GAME_W / 2, H / 2 + 100);
+            text("OU Appuyez sur ENTREE pour quitter", GAME_W / 2, H / 2 + 140);
+            
+            if (frameCount >= autoCloseTimer || (keyIsPressed && keyCode === ENTER)) {
+                if (window.parent && window.parent.quitterDancefloor) {
+                    window.parent.quitterDancefloor();
+                }
+            }
+        }
+
+        function resetGame() {
+            score = 0; combo = 0; timeLeft = 30; arrows = []; feedbacks = []; particles = []; 
+            gameOver = false; gameStarted = false; 
+            lastHitKey = null; danceTimer = 0;
+            autoCloseTimer = 0;
+            cristalDonne = false;
+        }
+
+
+(function(){
+    const BPM = 110;
+    const BEAT_MS = 60000 / BPM;
+
+    const PALETTE = [
+        [255,50,50],[50,220,255],[255,200,0],[180,50,255],
+        [50,255,120],[255,80,200],[255,130,0],[80,160,255],
+    ];
+
+    class Spot {
+        constructor(W, H) {
+            this.W = W; this.H = H;
+            this.life = Math.random() * 140;
+            this.reset();
+        }
+        reset() {
+            this.x  = Math.random() * this.W;
+            this.y  = Math.random() * this.H;
+            this.tx = Math.random() * this.W;
+            this.ty = Math.random() * this.H;
+            this.r  = 40 + Math.random() * 120;
+            this.rgb = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+            this.alpha = 0;
+            this.ta  = 0.35 + Math.random() * 0.5;
+            this.spd = 0.0012 + Math.random() * 0.0025; // Vitesse de déplacement des cercles
+            this.life = 0;
+            this.max  = 90 + Math.random() * 160;
+        }
+        update() {
+            this.x += (this.tx - this.x) * this.spd;
+            this.y += (this.ty - this.y) * this.spd;
+            this.life++;
+            if (this.life < 25)                  this.alpha = (this.life / 25) * this.ta;
+            else if (this.life > this.max - 25)  this.alpha = ((this.max - this.life) / 25) * this.ta;
+            if (this.life >= this.max) this.reset();
+        }
+        draw(ctx) {
+            const [r,g,b] = this.rgb;
+            const gr = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+            gr.addColorStop(0,   `rgba(${r},${g},${b},${this.alpha})`);
+            gr.addColorStop(0.4, `rgba(${r},${g},${b},${this.alpha * 0.5})`);
+            gr.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+            ctx.fillStyle = gr;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function initDisco(cvs, W, H, nSpots) {
+        cvs.width  = W;
+        cvs.height = H;
+        const ctx    = cvs.getContext('2d');
+        const spots  = Array.from({ length: nSpots }, () => new Spot(W, H));
+
+        function loop() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = 'rgba(4,4,18,0.90)';
+            ctx.fillRect(0, 0, W, H);
+            spots.forEach(s => { s.update(); s.draw(ctx); });
+            requestAnimationFrame(loop);
+        }
+        loop();
+    }
+
+    // Initialisation des canvas de gauche (disco1) et droite (disco3)
+    initDisco(document.getElementById('disco1'), 1920, 1200, 22);
+    initDisco(document.getElementById('disco3'), 1920, 1200, 22);
+
+    // Le beatLoop n'est plus nécessaire car il ne servait qu'à déclencher le flash au rythme de la musique
+})();
+
+    </script>
+</body>
+</html>

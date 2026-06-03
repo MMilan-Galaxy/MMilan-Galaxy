@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Dancefloor </title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Empêche les barres de défilement */
+            background-color: #0a0a14;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <script>
+        // --- CONFIGURATION ET CONSTANTES ---
+        const PALETTES = [
+          ['#ff6b9d', '#ff9e7a'],
+          ['#f9ca24', '#f0932b'],
+          ['#55efc4', '#00cec9']
+        ];
+
+        const DANCE_STYLES = {
+          '1': 'salsa',
+          '2': 'hiphop',
+          '3': 'wave',
+          '4': 'fluid'
+        };
+
+        let dancers = [];
+        let globalStatus = 'ALÉATOIRE';
+        let horizonY; 
+
+        // Variables pour le son
+        let mic;
+        let amplitude;
+        let threshold = 0.05; 
+        let lastClapTime = 0;
+
+        // Variables pour les rayons de lumière
+        let spotlights = [];
+
+        // --- AJUSTEMENTS POUR LE GRAND ÉCRAN (5760x1200) ---
+        const TARGET_WIDTH = 5760;
+        const TARGET_HEIGHT = 1200;
+        let scaleFactor = 1; 
+
+        // --- CLASSE DANSEUR ---
+        class Dancer {
+          constructor(x, y, palette) {
+            this.palette = palette;
+            this.t = random(100);
+            this.speed = 0.04 + random(0.03);
+            this.style = (globalStatus === 'ALÉATOIRE' || globalStatus === 'Mélange') 
+                         ? random(Object.values(DANCE_STYLES)) 
+                         : globalStatus;
+            
+            this.baseX = x;
+            this.baseY = constrain(y, horizonY + (40 * scaleFactor), height - (40 * scaleFactor));
+            
+            this.scale = (1.1 + random(0.3)) * scaleFactor;
+            this.phase = random(TWO_PI);
+            this.energy = 1;
+          }
+
+          setStyle(s) { this.style = s; }
+          click() { }
+
+          update() {
+            this.t += this.speed;
+          }
+
+          draw() {
+            push();
+            let s = this.style, t = this.t, e = this.energy, ph = this.phase;
+            let dx = 0, dy = 0, bodyTilt = 0, headBob = 0;
+            let lArmAngle = 0, rArmAngle = 0, lL = 0, rL = 0;
+            let eyeH = 4;
+
+            if (s === 'salsa') {
+              dx = sin(t * 1.5) * 8 * e; dy = sin(t * 3) * 3 * e; bodyTilt = sin(t * 1.5) * 12; headBob = cos(t * 3) * 5; lArmAngle = sin(t + ph) * 50; rArmAngle = -sin(t + ph) * 50; lL = sin(t * 2) * 20; rL = -sin(t * 2) * 20;
+            } else if (s === 'hiphop') {
+              dx = sin(t * 2) * 5 * e; dy = -abs(sin(t * 3)) * 8 * e; bodyTilt = sin(t * 2) * 8; headBob = sin(t * 4) * 6; lArmAngle = sin(t * 2 + ph) * 70; rArmAngle = cos(t * 2 + ph) * 70; lL = sin(t * 3) * 25; rL = cos(t * 3) * 25;
+            } else if (s === 'wave') {
+              dx = sin(t + ph) * 10 * e; dy = sin(t * 2 + ph) * 5 * e; bodyTilt = sin(t) * 15; headBob = sin(t * 1.5) * 8; lArmAngle = sin(t + ph) * 80; rArmAngle = sin(t + ph + 1) * 80; lL = sin(t * 1.5) * 15; rL = sin(t * 1.5 + 0.5) * 15;
+            } else if (s === 'fluid') {
+              dx = sin(t * 2) * 5 * e; dy = cos(t * 2) * 3 * e; bodyTilt = sin(t * 2) * 10; headBob = sin(t * 4) * 2; eyeH = abs(sin(t * 0.5)) * 6; lL = sin(t * 4) * 15; rL = -sin(t * 4) * 15;
+            }
+
+            let depthScale = map(this.baseY, horizonY, height, 0.4, 1.5);
+            translate(this.baseX + dx, this.baseY + dy);
+            scale(this.scale * depthScale);
+            rotate(radians(bodyTilt));
+
+            stroke(this.palette[0]); fill(this.palette[1]); strokeWeight(2.5);
+            push(); rotate(radians(lL)); rect(-8, 18, 8, 22, 4); pop();
+            push(); rotate(radians(rL)); rect(0, 18, 8, 22, 4); pop();
+            fill(this.palette[0]); stroke(this.palette[1]); rect(-12, -2, 24, 22, 5);
+
+            if (s === 'fluid') {
+              stroke(this.palette[0]); strokeWeight(3); noFill(); strokeCap(ROUND);
+              for (let i = 0; i < 2; i++) {
+                push();
+                let side = (i === 0 ? -12 : 12);
+                translate(side, 6);
+                beginShape();
+                vertex(0, 0);
+                let armLength = 20;
+                for (let x = 1; x <= armLength; x += 1) {
+                  let xPos = (side < 0) ? -x : x;
+                  let yPt = sin(x * (TWO_PI / armLength) + t * 2 + ph) * 5 * e;
+                  vertex(xPos, yPt);
+                }
+                endShape();
+                pop();
+              }
+            } else {
+              stroke(this.palette[1]); fill(this.palette[0]); strokeWeight(2.5);
+              push(); translate(-12, 4); rotate(radians(lArmAngle)); rect(-6, 0, 7, 18, 3); pop();
+              push(); translate(12, 4); rotate(radians(rArmAngle)); rect(0, 0, 7, 18, 3); pop();
+            }
+
+            push();
+            translate(0, headBob - 20);
+            fill(this.palette[1]); stroke(this.palette[0]); strokeWeight(2);
+            ellipse(0, 0, 26, 26);
+            fill(20); noStroke();
+            ellipse(-5, -2, 4, eyeH); ellipse(5, -2, 4, eyeH);
+            noFill(); stroke(20); arc(0, 4, 12, 8, 0.1, PI - 0.1);
+            pop();
+            pop();
+          }
+        }
+
+        // --- CLASSE PROJECTEUR DE LUMIÈRE ---
+        class Spotlight {
+          constructor(xAnchor, colorHex) {
+            this.xAnchor = xAnchor; // Point d'attache fixe tout en haut de l'écran
+            this.color = color(colorHex);
+            this.angleOffset = random(100); // Pour désynchroniser les mouvements
+            this.speed = random(0.01, 0.02);
+            this.baseWidth = random(80, 150); // Largeur du pinceau lumineux en bas
+          }
+
+          draw(vol) {
+            push();
+            // Le balayage change selon le temps et s'excite légèrement s'il y a du volume
+            let sweep = sin(frameCount * this.speed + this.angleOffset) * (width * 0.25);
+            let targetX = this.xAnchor + sweep; 
+
+            // Augmente l'opacité et l'ouverture du rayon selon l'intensité sonore
+            let pulseOpacity = map(vol, 0, 0.3, 20, 75, true);
+            let pulseWidth = this.baseWidth * map(vol, 0, 0.5, 1, 1.8, true);
+
+            noStroke();
+            // Dégradé de couleur transparent (base du cône en haut -> large en bas)
+            let c = this.color;
+            fill(red(c), green(c), blue(c), pulseOpacity);
+
+            // Dessin du cône de lumière (Rayon tracé à l'aide d'un quadrilatère)
+            beginShape();
+            vertex(this.xAnchor - 5, 0); // Sommet gauche (très serré en haut)
+            vertex(this.xAnchor + 5, 0); // Sommet droit
+            vertex(targetX + pulseWidth, height); // Base droite (bas de l'écran)
+            vertex(targetX - pulseWidth, height); // Base gauche
+            endShape(CLOSE);
+            pop();
+          }
+        }
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+            calculateScales();
+            
+            mic = new p5.AudioIn();
+            mic.start(() => console.log("Micro démarré"), (err) => console.error("Erreur micro:", err));
+            amplitude = new p5.Amplitude();
+
+            // Création de 4 projecteurs répartis en haut de l'écran
+            spotlights.push(new Spotlight(width * 0.2, '#ff6b9d')); // Rose
+            spotlights.push(new Spotlight(width * 0.4, '#55efc4')); // Cyan
+            spotlights.push(new Spotlight(width * 0.6, '#f9ca24')); // Jaune
+            spotlights.push(new Spotlight(width * 0.8, '#9b5de5')); // Violet électrique
+
+            for (let i = 0; i < 25; i++) {
+                dancers.push(new Dancer(random(100, width - 100), random(horizonY + 50, height - 50), random(PALETTES)));
+            }
+        }
+
+        function calculateScales() {
+          horizonY = height * 0.50; 
+          scaleFactor = height / 800; 
+        }
+
+        function draw() {
+          background(10, 10, 20); 
+
+          // --- LOGIQUE DETECTION SON ---
+          let vol = 0;
+          if (mic.enabled) {
+            if (amplitude.input !== mic) {
+                amplitude.setInput(mic);
+            }
+            vol = amplitude.getLevel();
+          }
+
+          let now = millis();
+          if (vol > threshold && now - lastClapTime > 300) {
+            dancers.push(new Dancer(random(100, width - 100), random(horizonY + 50, height - 50), random(PALETTES)));
+            lastClapTime = now;
+          }
+          
+          // Sol et perspective
+          noStroke();
+          fill(25, 25, 45); 
+          rect(0, horizonY, width, height - horizonY);
+
+          stroke(255, 15);
+          strokeWeight(1.5);
+
+          // LIGNES DE FUITE (PERSPECTIVE ACCENTUÉE)
+          let numLines = 50; 
+          for (let i = 0; i <= numLines; i++) {
+            let xTop = map(i, 0, numLines, 0, width); 
+            let xBottom = map(i, 0, numLines, -width * 0.5, width * 1.5); 
+            line(xTop, horizonY, xBottom, height);
+          }
+
+          // LIGNES HORIZONTALES
+          for (let i = 0; i < 14; i++) {
+            let y = map(pow(i / 14, 2), 0, 1, horizonY, height);
+            line(0, y, width, y);
+          }
+
+          // Tri et dessin des danseurs
+          dancers.sort((a, b) => a.baseY - b.baseY);
+          dancers.forEach(d => {
+            d.update();
+            d.draw();
+          });
+
+          // --- DESSIN DES RAYONS DE LUMIÈRE (Dessinés par-dessus les danseurs pour l'effet de transparence) ---
+          spotlights.forEach(spot => {
+            spot.draw(vol);
+          });
+
+          // --- UI : INDICATIONS POSITIONNÉES EN HAUT À GAUCHE ---
+          push();
+          textSize(20 * scaleFactor);
+          textFont('monospace');
+          noStroke(); 
+          textAlign(LEFT, TOP);
+          
+          // --- OMBRES DES TEXTES ---
+          fill(0, 0, 0, 150);
+          text("CLAP des mains ou clic à la souris : Ajouter un danseur", 41, 41);
+          text("TOUCHES 1 à 4 : Changer de style | TOUCHES 5 : Mélange", 41, 41 + (28 * scaleFactor));
+          text("MODE ACTUEL : " + globalStatus.toUpperCase(), 41, 41 + (95 * scaleFactor));
+          
+          // --- TEXTES PRINCIPAUX ---
+          fill(255, 220);
+          text("CLAP des mains ou clic à la souris : Ajouter un danseur", 40, 40);
+          
+          fill(200, 200, 255);
+          text("TOUCHES 1 à 4 : Changer de style | TOUCHES 5 : Mélange", 40, 40 + (28 * scaleFactor));
+          
+          fill(200, 200, 255);
+          text("MODE ACTUEL : " + globalStatus.toUpperCase(), 40, 40 + (95 * scaleFactor));
+          
+          fill(0, 255, 200, 150);
+          rect(40, 40 + (65 * scaleFactor), vol * 400 * scaleFactor, 12, 4);
+          pop();
+        }
+
+        function keyPressed() {
+          if (DANCE_STYLES[key]) {
+            globalStatus = DANCE_STYLES[key];
+            dancers.forEach(d => d.setStyle(globalStatus));
+          } else if (key === '5') {
+            globalStatus = "Mélange";
+            dancers.forEach(d => d.setStyle(random(Object.values(DANCE_STYLES))));
+          }
+        }
+
+        function mousePressed() {
+          if (getAudioContext().state !== 'running') {
+            getAudioContext().resume();
+          }
+
+          let hit = false;
+          dancers.forEach(d => {
+            let dScale = map(d.baseY, horizonY, height, 0.4, 1.5);
+            if (dist(mouseX, mouseY, d.baseX, d.baseY) < (60 * dScale * scaleFactor)) {
+              d.click();
+              hit = true;
+            }
+          });
+
+          if (!hit && mouseY > horizonY) { 
+            dancers.push(new Dancer(mouseX, mouseY, random(PALETTES)));
+          }
+        }
+
+        function windowResized() {
+          resizeCanvas(windowWidth, windowHeight);
+          calculateScales();
+          
+          // Réajuste la position d'ancrage des projecteurs si la fenêtre change de taille
+          if(spotlights.length >= 4) {
+            spotlights[0].xAnchor = width * 0.2;
+            spotlights[1].xAnchor = width * 0.4;
+            spotlights[2].xAnchor = width * 0.6;
+            spotlights[3].xAnchor = width * 0.8;
+          }
+        }
+    </script>
+</body>
+</html>

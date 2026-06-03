@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Super Saiyan</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  body { background: #000; overflow: hidden; height: 100vh; font-family: 'Inter', sans-serif; color: #fff; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; padding: 30px 40px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none; z-index: 10;
+  }
+  #title {
+    font-family: 'Bangers', sans-serif; letter-spacing: 5px; font-size: 36px;
+    color: #ffd700; text-shadow: 0 0 30px #ffd700, 0 0 60px #ff8c1a;
+  }
+  #title small { display: block; font-size: 12px; color: #9e8e74; letter-spacing: 2px; margin-top: 4px; font-family: 'Inter', sans-serif; font-weight: 400; }
+  #form {
+    font-family: 'Bangers', sans-serif; font-size: 28px; letter-spacing: 4px;
+    color: #fff; text-align: right;
+  }
+  #form span { display: block; font-size: 11px; color: #9e8e74; letter-spacing: 3px; font-family: 'Inter', sans-serif; font-weight: 400; }
+
+  #gauges {
+    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    width: min(560px, 80vw); z-index: 10; pointer-events: none; text-align: center;
+  }
+  .gauge-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .gauge-row label { width: 70px; font-size: 11px; letter-spacing: 2px; color: #9e8e74; text-align: left; }
+  .gauge-bar {
+    flex: 1; height: 14px;
+    background: rgba(0,0,0,0.6); border: 1px solid #ff8c1a;
+    position: relative; overflow: hidden;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  }
+  .gauge-fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    transition: width 0.06s linear;
+  }
+  #gMic .gauge-fill { background: linear-gradient(90deg, #2d8f3a, #ffd700); }
+  #gCps .gauge-fill { background: linear-gradient(90deg, #ff8c1a, #c41e3a); }
+  #gPwr {
+    height: 22px; border: 2px solid #ffd700; margin-top: 14px;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    box-shadow: 0 0 20px rgba(255,215,0,0.4);
+  }
+  #gPwr .gauge-fill { background: linear-gradient(90deg, #ff8c1a 0%, #ffd700 50%, #fff 100%); box-shadow: 0 0 20px #ffd700; }
+  #tip { font-size: 12px; letter-spacing: 1.5px; color: #c4b89e; margin-top: 12px; }
+
+  #finish-btn {
+    position: fixed; top: 30px; left: 50%; transform: translateX(-50%);
+    background: #ffd700; color: #000; border: 2px solid #ffd700;
+    padding: 12px 32px; font-family: 'Bangers', sans-serif; letter-spacing: 3px; font-size: 18px;
+    cursor: pointer; z-index: 20; display: none;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    box-shadow: 0 0 30px #ffd700;
+    transition: transform 0.2s;
+  }
+  #finish-btn.show { display: block; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 30px #ffd700; } 50% { box-shadow: 0 0 60px #fff; } }
+  #finish-btn:hover { transform: translateX(-50%) scale(1.05); }
+
+  #micPrompt {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+  }
+  #micPrompt h2 { font-family: 'Bangers', sans-serif; font-size: 48px; color: #ffd700; letter-spacing: 4px; }
+  #micPrompt p { color: #c4b89e; max-width: 520px; text-align: center; line-height: 1.6; padding: 0 20px; }
+  #micPrompt button {
+    background: #ffd700; color: #000; border: 2px solid #ffd700;
+    padding: 14px 40px; font-family: 'Bangers', sans-serif; letter-spacing: 3px; font-size: 20px;
+    cursor: pointer; clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+  #micPrompt #err { color: #c41e3a; font-size: 13px; min-height: 20px; }
+  #micPrompt #boot-step { font-size: 12px; letter-spacing: 2px; color: #9e8e74; }
+
+  #camVideo { display: none; }
+</style>
+</head>
+<body>
+
+<video id="camVideo" autoplay playsinline muted></video>
+
+<div id="hud">
+  <div id="title">SUPER SAIYAN<small>Crie ou clique frénétiquement pour libérer ton énergie</small></div>
+  <div id="form"><span>Forme actuelle</span><div id="formName">NORMAL</div></div>
+</div>
+
+<div id="gauges">
+  <div class="gauge-row" id="gMic"><label>🎤 MIC</label><div class="gauge-bar"><div class="gauge-fill"></div></div></div>
+  <div class="gauge-row" id="gCps"><label>🖱️ CPS</label><div class="gauge-bar"><div class="gauge-fill"></div></div></div>
+  <div class="gauge-bar" id="gPwr"><div class="gauge-fill"></div></div>
+  <div id="tip">Maintiens le palier maximal pour confirmer la transformation</div>
+</div>
+
+<button id="finish-btn">TERMINER ✦ SUPER SAIYAN</button>
+
+<div id="micPrompt">
+  <h2>PRÊT À TE TRANSFORMER ?</h2>
+  <p>Cette interaction utilise ta <strong>caméra</strong> et ton <strong>micro</strong>.<br>Crie pour faire monter ta puissance, ou clique partout frénétiquement.</p>
+  <button id="startBtn">ACTIVER LA CAMÉRA &amp; LE MIC</button>
+  <div id="boot-step"></div>
+  <div id="err"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  SUPER SAIYAN — Snap-style filter (MediaPipe FaceMesh + Web Audio)
+// ═══════════════════════════════════════════════════════════════
+
+const camVideo = document.getElementById('camVideo');
+const startBtn = document.getElementById('startBtn');
+const bootStep = document.getElementById('boot-step');
+const errBox = document.getElementById('err');
+
+let landmarks = null;  // current face landmarks (normalized 0..1)
+let micLevel = 0;
+let analyser = null;
+let audioData = null;
+let cpsHistory = [];
+let cps = 0;
+let started = false;
+
+let power = 0, smoothPower = 0, displayLevel = 0;
+let frame = 0;
+let finishVisibleAt = null;
+
+const LEVELS = [
+  { name: "NORMAL",      threshold: 0.00, hair: 0,    aura: 0,    lightning: 0,    color: [255,255,255] },
+  { name: "SSJ",         threshold: 0.25, hair: 0.6,  aura: 0.5,  lightning: 0.0, color: [255,215,0] },
+  { name: "SSJ2",        threshold: 0.55, hair: 0.85, aura: 0.85, lightning: 0.6, color: [255,230,80] },
+  { name: "SSJ3",        threshold: 0.85, hair: 1.2,  aura: 1.2,  lightning: 1.0, color: [255,255,180] },
+];
+
+let bolts = [];
+let particles = [];
+let lastLvl = 0;
+
+// ─── SFX ───
+let _sac=null; function sac(){ if(!_sac)_sac=new(window.AudioContext||window.webkitAudioContext)(); if(_sac.state==='suspended')_sac.resume(); return _sac; }
+function ssnd(f,t,d,v){ try{const a=sac(),o=a.createOscillator(),g=a.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+d);}catch(e){} }
+function snoise(d,v){ try{const a=sac();const b=a.createBuffer(1,a.sampleRate*d,a.sampleRate);const dt=b.getChannelData(0);for(let i=0;i<dt.length;i++)dt[i]=(Math.random()*2-1)*(1-i/dt.length);const s=a.createBufferSource();s.buffer=b;const f=a.createBiquadFilter();f.type='lowpass';f.frequency.value=500;const g=a.createGain();g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);s.connect(f);f.connect(g);g.connect(a.destination);s.start();}catch(e){} }
+function sfxLevelUp(lvl){
+  const base = 330 + lvl*110;
+  ssnd(base,'sawtooth',0.5,0.14); ssnd(base*1.5,'sine',0.6,0.1); ssnd(base*2,'triangle',0.4,0.06);
+  snoise(0.7,0.18); // power burst rumble
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  p5 setup / draw — runs continuously, idles until `started`
+// ═══════════════════════════════════════════════════════════════
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  pixelDensity(1);
+  noStroke();
+}
+function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+
+function draw() {
+  background(0);
+  if (!started) return;
+
+  frame++;
+  updateCPS();
+
+  // ── Compute power ──
+  const micPower = constrain(micLevel * 8, 0, 1);
+  const cpsPower = constrain(cps / 12, 0, 1);
+  const rawPower = max(micPower, cpsPower);
+  smoothPower = lerp(smoothPower, rawPower, 0.18);
+  power = smoothPower;
+
+  let lvlIdx = 0;
+  for (let i = LEVELS.length - 1; i >= 0; i--) {
+    if (power >= LEVELS[i].threshold) { lvlIdx = i; break; }
+  }
+  displayLevel = lerp(displayLevel, lvlIdx, 0.12);
+  const lvl = LEVELS[lvlIdx];
+  if (lvlIdx > lastLvl) sfxLevelUp(lvlIdx);
+  lastLvl = lvlIdx;
+
+  // HUD updates
+  document.querySelector('#gMic .gauge-fill').style.width = (micPower * 100) + '%';
+  document.querySelector('#gCps .gauge-fill').style.width = (cpsPower * 100) + '%';
+  document.querySelector('#gPwr .gauge-fill').style.width = (power * 100) + '%';
+  const fn = document.getElementById('formName');
+  fn.textContent = lvl.name;
+  fn.style.color = `rgb(${lvl.color[0]},${lvl.color[1]},${lvl.color[2]})`;
+  fn.style.textShadow = lvlIdx >= 1 ? `0 0 20px rgb(${lvl.color[0]},${lvl.color[1]},${lvl.color[2]})` : 'none';
+
+  if (lvlIdx >= 1) {
+    if (!finishVisibleAt) finishVisibleAt = performance.now();
+    if (performance.now() - finishVisibleAt > 1500) document.getElementById('finish-btn').classList.add('show');
+  } else {
+    finishVisibleAt = null;
+  }
+
+  // ── Screen shake ──
+  const shakeMag = power * 14 * (lvlIdx >= 2 ? 1.6 : 1);
+  push();
+  translate(random(-shakeMag, shakeMag), random(-shakeMag, shakeMag));
+
+  // ── Draw mirrored camera fullscreen ──
+  const vAspect = camVideo.videoWidth ? (camVideo.videoWidth / camVideo.videoHeight) : 4/3;
+  const cAspect = width / height;
+  let dw, dh, dx, dy;
+  if (cAspect > vAspect) { dw = width; dh = width / vAspect; dx = 0; dy = (height - dh) / 2; }
+  else { dh = height; dw = height * vAspect; dy = 0; dx = (width - dw) / 2; }
+
+  push();
+  translate(width, 0); scale(-1, 1);
+  if (camVideo.videoWidth) {
+    drawingContext.drawImage(camVideo, width - dx - dw, dy, dw, dh);
+  }
+  pop();
+
+  // ── Color tint ──
+  if (lvlIdx >= 1) {
+    noStroke();
+    fill(lvl.color[0], lvl.color[1], lvl.color[2], 25 * lvlIdx);
+    rect(0, 0, width, height);
+  }
+
+  // ── Face overlay ──
+  if (landmarks && landmarks.length > 100 && camVideo.videoWidth) {
+    // Map normalized landmark → mirrored screen coords
+    const mp = (kp) => ({
+      x: width - (kp.x * dw + dx),
+      y: kp.y * dh + dy,
+    });
+
+    const forehead = mp(landmarks[10]);
+    const chin     = mp(landmarks[152]);
+    const tempL    = mp(landmarks[234]);
+    const tempR    = mp(landmarks[454]);
+    const eyeL     = mp(landmarks[33]);
+    const eyeR     = mp(landmarks[263]);
+
+    const faceW = dist(tempL.x, tempL.y, tempR.x, tempR.y);
+    const faceH = dist(forehead.x, forehead.y, chin.x, chin.y);
+    const cx = (forehead.x + chin.x) / 2;
+    const cy = (forehead.y + chin.y) / 2;
+    const angle = atan2(chin.y - forehead.y, chin.x - forehead.x) - HALF_PI;
+
+    if (lvl.aura > 0) drawAura(cx, cy, faceW, faceH, lvl, power);
+    if (lvl.lightning > 0) {
+      if (random() < 0.6 * lvl.lightning) spawnBolt(cx, cy, faceW * 1.2, lvl);
+      drawBolts();
+    } else {
+      bolts = [];
+    }
+    if (lvl.hair > 0) drawSaiyanHair(forehead, faceW, faceH, angle, lvl, power);
+    if (lvlIdx >= 1) {
+      drawEyeGlow(eyeL, faceW, lvl);
+      drawEyeGlow(eyeR, faceW, lvl);
+    }
+    if (lvlIdx >= 1) drawParticles(cx, cy + faceH * 0.4, faceW, lvl);
+  }
+
+  pop();
+
+  if (lvlIdx >= 2) drawSpeedLines();
+  drawVignette(lvlIdx);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AURA
+// ═══════════════════════════════════════════════════════════════
+function drawAura(cx, cy, faceW, faceH, lvl, p) {
+  const r = faceW * (1.0 + lvl.aura * 0.5) + sin(frame * 0.18) * faceW * 0.08;
+  const col = lvl.color;
+  noStroke();
+  push();
+  drawingContext.save();
+  drawingContext.globalCompositeOperation = 'screen';
+  for (let layer = 6; layer >= 1; layer--) {
+    const layerR = r * (0.9 + layer * 0.18);
+    const alpha = (180 / layer) * p;
+    drawingContext.filter = `blur(${layer * 4}px)`;
+    fill(col[0], col[1], col[2], alpha);
+    ellipse(cx, cy - faceH * 0.1, layerR * 2, layerR * 2.2);
+  }
+  drawingContext.filter = 'none';
+  fill(255, 255, 255, 80 * p);
+  ellipse(cx, cy - faceH * 0.1, r * 1.2, r * 1.4);
+  drawingContext.restore();
+  pop();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HAIR
+// ═══════════════════════════════════════════════════════════════
+function drawSaiyanHair(forehead, faceW, faceH, angle, lvl, p) {
+  push();
+  translate(forehead.x, forehead.y);
+  rotate(angle);
+  const sway = sin(frame * 0.1) * 4;
+
+  drawingContext.save();
+  drawingContext.shadowColor = `rgba(255,140,26,${0.8 * p})`;
+  drawingContext.shadowBlur = 30 * lvl.hair;
+
+  const spikes = 11;
+  const baseW = faceW * 1.1;
+  const spikeH = faceH * (0.7 + lvl.hair * 0.6);
+
+  fill(220, 170, 0);
+  drawSpikePath(baseW, spikeH, spikes, faceH * 0.25, sway, 1.0);
+
+  fill(255, 215, 0);
+  drawSpikePath(baseW * 0.95, spikeH * 0.92, spikes, faceH * 0.22, sway, 0.92);
+
+  fill(255, 245, 180);
+  drawSpikePath(baseW * 0.9, spikeH * 0.85, spikes, faceH * 0.20, sway, 0.8);
+
+  if (lvl.hair > 0.7) {
+    drawingContext.filter = `blur(2px)`;
+    fill(255, 255, 255, 200);
+    drawSpikePath(baseW * 0.6, spikeH * 0.78, spikes, faceH * 0.18, sway, 0.7);
+    drawingContext.filter = 'none';
+  }
+
+  // Side bangs
+  fill(255, 215, 0);
+  beginShape();
+  vertex(-baseW * 0.5, 0);
+  vertex(-baseW * 0.45, faceH * 0.18);
+  vertex(-baseW * 0.25, faceH * 0.05);
+  vertex(0, faceH * 0.1);
+  vertex(baseW * 0.25, faceH * 0.05);
+  vertex(baseW * 0.45, faceH * 0.18);
+  vertex(baseW * 0.5, 0);
+  endShape(CLOSE);
+
+  drawingContext.restore();
+  pop();
+}
+
+function drawSpikePath(baseW, spikeH, spikes, baseDip, sway, randomness) {
+  beginShape();
+  vertex(-baseW * 0.5, baseDip);
+  for (let i = 0; i <= spikes; i++) {
+    const t = i / spikes;
+    const x = -baseW * 0.5 + t * baseW;
+    const tipOffset = (i % 2 === 0 ? -1 : 1) * (8 + sin(frame * 0.07 + i) * 3);
+    const h = spikeH * (0.7 + Math.sin(i * 1.7) * 0.3 * randomness);
+    const tipX = x + tipOffset + sway * (1 - Math.abs(t - 0.5) * 1.5);
+    const tipY = -h + sin(frame * 0.13 + i * 0.7) * 2;
+    vertex(x - baseW / spikes * 0.4, baseDip * 0.5);
+    vertex(tipX, tipY);
+    vertex(x + baseW / spikes * 0.4, baseDip * 0.5);
+  }
+  vertex(baseW * 0.5, baseDip);
+  endShape(CLOSE);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EYES
+// ═══════════════════════════════════════════════════════════════
+function drawEyeGlow(eye, faceW, lvl) {
+  push();
+  drawingContext.save();
+  drawingContext.globalCompositeOperation = 'screen';
+  drawingContext.filter = 'blur(4px)';
+  fill(lvl.color[0], lvl.color[1], lvl.color[2], 200);
+  ellipse(eye.x, eye.y, faceW * 0.18, faceW * 0.1);
+  drawingContext.filter = 'none';
+  fill(255, 255, 255, 220);
+  ellipse(eye.x, eye.y, faceW * 0.08, faceW * 0.05);
+  drawingContext.restore();
+  pop();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LIGHTNING
+// ═══════════════════════════════════════════════════════════════
+function spawnBolt(cx, cy, radius, lvl) {
+  const a = random(TWO_PI);
+  let x = cx + cos(a) * radius * random(0.5, 1.1);
+  let y = cy + sin(a) * radius * random(0.5, 1.1);
+  const segs = [];
+  const steps = floor(random(5, 12));
+  for (let i = 0; i < steps; i++) {
+    const nx = x + random(-30, 30);
+    const ny = y + random(-40, 20);
+    segs.push({ x1: x, y1: y, x2: nx, y2: ny });
+    x = nx; y = ny;
+  }
+  bolts.push({ segs, life: 8, col: lvl.color });
+}
+function drawBolts() {
+  push();
+  drawingContext.save();
+  drawingContext.shadowColor = '#ffffff';
+  drawingContext.shadowBlur = 12;
+  for (let i = bolts.length - 1; i >= 0; i--) {
+    const b = bolts[i];
+    stroke(255, 255, 255, b.life * 28);
+    strokeWeight(random(1.2, 3));
+    for (const s of b.segs) line(s.x1, s.y1, s.x2, s.y2);
+    stroke(b.col[0], b.col[1], b.col[2], b.life * 24);
+    strokeWeight(random(0.5, 1.4));
+    for (const s of b.segs) line(s.x1, s.y1, s.x2, s.y2);
+    b.life--;
+    if (b.life <= 0) bolts.splice(i, 1);
+  }
+  drawingContext.restore();
+  pop();
+  noStroke();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PARTICLES
+// ═══════════════════════════════════════════════════════════════
+function drawParticles(cx, cy, faceW, lvl) {
+  if (random() < 0.7) {
+    particles.push({
+      x: cx + random(-faceW * 0.5, faceW * 0.5),
+      y: cy + random(0, faceW * 0.3),
+      vx: random(-0.5, 0.5), vy: -1 - random() * 2,
+      life: 40 + random(20), col: lvl.color, size: random(2, 5),
+    });
+  }
+  push();
+  drawingContext.save();
+  drawingContext.globalCompositeOperation = 'screen';
+  drawingContext.filter = 'blur(1px)';
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy -= 0.05; p.life--;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    const a = constrain(p.life * 6, 0, 220);
+    fill(p.col[0], p.col[1], p.col[2], a);
+    circle(p.x, p.y, p.size);
+  }
+  drawingContext.restore();
+  pop();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SPEED LINES + VIGNETTE
+// ═══════════════════════════════════════════════════════════════
+function drawSpeedLines() {
+  push();
+  drawingContext.save();
+  drawingContext.globalCompositeOperation = 'screen';
+  stroke(255, 255, 200, 80);
+  strokeWeight(2);
+  const n = 22;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TWO_PI + frame * 0.02;
+    const r1 = max(width, height) * 0.4;
+    const r2 = max(width, height) * 0.7;
+    const x1 = width / 2 + cos(a) * r1;
+    const y1 = height / 2 + sin(a) * r1;
+    const x2 = width / 2 + cos(a) * r2;
+    const y2 = height / 2 + sin(a) * r2;
+    line(x1, y1, x2, y2);
+  }
+  drawingContext.restore();
+  noStroke();
+  pop();
+}
+
+function drawVignette(lvlIdx) {
+  const g = drawingContext.createRadialGradient(width / 2, height / 2, max(width, height) * 0.3,
+                                                 width / 2, height / 2, max(width, height) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, `rgba(0,0,0,${0.55 + lvlIdx * 0.05})`);
+  drawingContext.fillStyle = g;
+  drawingContext.fillRect(0, 0, width, height);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CPS counter
+// ═══════════════════════════════════════════════════════════════
+window.addEventListener('mousedown', () => { if (started) cpsHistory.push(performance.now()); });
+function updateCPS() {
+  const now = performance.now();
+  cpsHistory = cpsHistory.filter(t => now - t < 1000);
+  cps = cpsHistory.length;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Mic level via Web Audio API
+// ═══════════════════════════════════════════════════════════════
+function startMicLevelLoop() {
+  audioData = new Uint8Array(analyser.fftSize);
+  function tick() {
+    if (!analyser) return;
+    analyser.getByteTimeDomainData(audioData);
+    let sumSq = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      const v = (audioData[i] - 128) / 128;
+      sumSq += v * v;
+    }
+    const rms = Math.sqrt(sumSq / audioData.length);
+    micLevel = micLevel * 0.7 + rms * 0.3;
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Bootstrap on user gesture
+// ═══════════════════════════════════════════════════════════════
+async function bootstrap() {
+  try {
+    bootStep.textContent = 'Initialisation…';
+    errBox.textContent = '';
+    startBtn.disabled = true;
+
+    // 1) Réutilise le flux partagé par le hub (permission déjà accordée), sinon le demande
+    let stream = null;
+    if (window.__mangaStream && window.__mangaStream.active) stream = window.__mangaStream;
+    if (!stream) { try { const P = window.parent; if (P && P.__mangaStream && P.__mangaStream.active) stream = P.__mangaStream; } catch(e){} }
+    if (!stream) stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' },
+      audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false }
+    });
+
+    // Split: video to <video>, audio to AudioContext analyser
+    const videoStream = new MediaStream(stream.getVideoTracks());
+    const audioStream = new MediaStream(stream.getAudioTracks());
+
+    bootStep.textContent = 'Démarrage de la caméra…';
+    camVideo.srcObject = videoStream;
+    await new Promise((res) => { camVideo.onloadedmetadata = res; });
+    await camVideo.play();
+
+    bootStep.textContent = 'Configuration du micro…';
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    const source = audioCtx.createMediaStreamSource(audioStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    startMicLevelLoop();
+
+    bootStep.textContent = 'Chargement de ml5 faceMesh…';
+    if (typeof ml5 === 'undefined') throw new Error('ml5 non chargé');
+
+    // ml5 faceMesh — keypoints en pixels → on normalise pour préserver le mapping mp()
+    const faceMesh = ml5.faceMesh({ maxFaces: 1, refineLandmarks: false, flipped: false }, () => {
+      faceMesh.detectStart(camVideo, (results) => {
+        if (results && results.length > 0 && results[0].keypoints) {
+          const vw = camVideo.videoWidth || 640, vh = camVideo.videoHeight || 480;
+          landmarks = results[0].keypoints.map(k => ({ x: k.x / vw, y: k.y / vh }));
+        } else {
+          landmarks = null;
+        }
+      });
+    });
+
+    bootStep.textContent = '';
+    document.getElementById('micPrompt').style.display = 'none';
+    started = true;
+  } catch (e) {
+    console.error(e);
+    errBox.textContent = `Erreur : ${e.message || e}`;
+    bootStep.textContent = '';
+    startBtn.disabled = false;
+  }
+}
+
+startBtn.onclick = bootstrap;
+
+// Finish
+document.getElementById('finish-btn').onclick = () => {
+  try { window.parent.postMessage({ type: 'interaction-complete', id: 'saiyan' }, '*'); } catch (e) {}
+};
+</script>
+<script src="mouse-fallback.js"></script>
+</body>
+</html>

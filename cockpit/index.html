@@ -1,0 +1,2720 @@
+<!doctype html>
+<html lang="fr">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Système Solaire · WebGL</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap");
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                background: #000;
+                overflow: hidden;
+                font-family: "Share Tech Mono", monospace;
+                cursor: none;
+            }
+
+            #three-canvas {
+                position: fixed;
+                inset: 0;
+                z-index: 1;
+            }
+
+            /* ── Cursor overlay ───────────────────────────────── */
+            #cursor-canvas {
+                position: fixed;
+                inset: 0;
+                z-index: 50;
+                pointer-events: none;
+            }
+
+            /* ── Loading ──────────────────────────────────────── */
+            #loading {
+                position: fixed;
+                inset: 0;
+                z-index: 999;
+                background: #000010;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 20px;
+                color: rgba(120, 200, 255, 0.9);
+                font-family: "Orbitron", sans-serif;
+                transition: opacity 1s ease;
+            }
+            #loading h2 {
+                font-size: clamp(16px, 3vw, 28px);
+                letter-spacing: 0.3em;
+                text-transform: uppercase;
+                text-shadow: 0 0 30px rgba(80, 160, 255, 0.8);
+            }
+            #loading p {
+                font-size: 11px;
+                font-family: "Share Tech Mono", monospace;
+                color: rgba(120, 200, 255, 0.4);
+                letter-spacing: 0.1em;
+            }
+            .lbar {
+                width: 220px;
+                height: 1px;
+                background: rgba(80, 160, 255, 0.15);
+            }
+            .lfill {
+                height: 100%;
+                background: rgba(80, 160, 255, 0.7);
+                animation: lf 2s ease-in-out infinite;
+            }
+            @keyframes lf {
+                0% {
+                    width: 0;
+                }
+                60% {
+                    width: 85%;
+                }
+                100% {
+                    width: 100%;
+                }
+            }
+
+            /* ── Main HUD ─────────────────────────────────────── */
+            #hud {
+                position: fixed;
+                top: 24px;
+                left: 28px;
+                z-index: 60;
+                color: rgba(120, 200, 255, 0.8);
+                pointer-events: none;
+            }
+            #hud h1 {
+                font-family: "Orbitron", sans-serif;
+                font-size: clamp(13px, 1.8vw, 20px);
+                font-weight: 900;
+                letter-spacing: 0.35em;
+                text-transform: uppercase;
+                color: #fff;
+                text-shadow: 0 0 20px rgba(80, 160, 255, 0.7);
+            }
+            #hud-sub {
+                font-size: 9px;
+                letter-spacing: 0.2em;
+                color: rgba(120, 200, 255, 0.4);
+                margin-top: 3px;
+            }
+            #status-line {
+                margin-top: 14px;
+                font-size: 10px;
+                letter-spacing: 0.08em;
+                color: rgba(120, 200, 255, 0.7);
+                border-left: 1px solid rgba(80, 160, 255, 0.4);
+                padding-left: 10px;
+            }
+            #instructions {
+                margin-top: 10px;
+                font-size: 9px;
+                color: rgba(100, 170, 220, 0.45);
+                line-height: 1.8;
+                border-left: 1px solid rgba(80, 160, 255, 0.15);
+                padding-left: 10px;
+            }
+
+            /* ── Planet hover label ───────────────────────────── */
+            #planet-label {
+                position: fixed;
+                z-index: 60;
+                pointer-events: none;
+                opacity: 0;
+                transition: opacity 0.25s;
+                transform: translate(-50%, -100%);
+                text-align: center;
+                background: rgba(4,8,20,0.75);
+                border: 1px solid rgba(80,160,255,0.25);
+                border-radius: 4px;
+                padding: 8px 14px 6px;
+                backdrop-filter: blur(6px);
+            }
+            #planet-label::after {
+                content: '';
+                position: absolute;
+                bottom: -5px;
+                left: 50%;
+                transform: translateX(-50%) rotate(45deg);
+                width: 8px;
+                height: 8px;
+                background: rgba(4,8,20,0.75);
+                border-right: 1px solid rgba(80,160,255,0.25);
+                border-bottom: 1px solid rgba(80,160,255,0.25);
+            }
+            #planet-label .pl-name {
+                font-family: "Orbitron", sans-serif;
+                font-size: 13px;
+                font-weight: 700;
+                letter-spacing: 0.2em;
+                color: #fff;
+                text-shadow: 0 0 16px rgba(120, 200, 255, 0.9);
+            }
+            #planet-label .pl-desc {
+                font-size: 9px;
+                color: rgba(160, 220, 255, 0.6);
+                letter-spacing: 0.08em;
+                margin-top: 3px;
+            }
+            #planet-label .pl-hint {
+                font-size: 8px;
+                color: rgba(80, 160, 255, 0.4);
+                letter-spacing: 0.12em;
+                margin-top: 5px;
+                text-transform: uppercase;
+            }
+
+            /* ── Surface HUD ──────────────────────────────────── */
+            #surface-hud {
+                position: fixed;
+                inset: 0;
+                z-index: 60;
+                pointer-events: none;
+                opacity: 0;
+                transition: opacity 0.6s;
+            }
+            #surface-hud.visible {
+                opacity: 1;
+            }
+
+            /* Redesigned planet info card – side panel */
+            #surface-card {
+                position: absolute;
+                top: calc(var(--ck-th) + 20px);
+                right: calc(var(--ck-rw) + 16px);
+                width: clamp(220px, 20vw, 320px);
+                background: rgba(4,8,20,0.88);
+                border: 1px solid rgba(80,160,255,0.3);
+                border-radius: 6px;
+                padding: 0;
+                overflow: hidden;
+                backdrop-filter: blur(12px);
+                box-shadow: 0 4px 40px rgba(0,10,40,0.6), inset 0 1px 0 rgba(80,160,255,0.08);
+            }
+            #surface-card-header {
+                padding: 16px 18px 12px;
+                border-bottom: 1px solid rgba(80,160,255,0.12);
+                position: relative;
+                overflow: hidden;
+            }
+            #surface-card-header::before {
+                content: '';
+                position: absolute;
+                top: 0; left: 0; right: 0;
+                height: 2px;
+                background: linear-gradient(to right, transparent, var(--planet-accent, rgba(80,160,255,0.7)), transparent);
+            }
+            #surface-card-name {
+                font-family: "Orbitron", sans-serif;
+                font-size: clamp(16px, 1.8vw, 24px);
+                font-weight: 900;
+                letter-spacing: 0.2em;
+                text-transform: uppercase;
+                color: #fff;
+                text-shadow: 0 0 20px var(--planet-accent, rgba(80,160,255,0.5));
+                margin: 0;
+            }
+            #surface-card-biome {
+                display: inline-block;
+                margin-top: 6px;
+                font-family: "Share Tech Mono", monospace;
+                font-size: 9px;
+                letter-spacing: 0.2em;
+                color: var(--planet-accent, rgba(120,200,255,0.8));
+                border: 1px solid var(--planet-accent, rgba(80,160,255,0.3));
+                border-radius: 2px;
+                padding: 2px 8px;
+                text-transform: uppercase;
+            }
+            #surface-card-desc {
+                padding: 12px 18px;
+                font-size: 11px;
+                line-height: 1.7;
+                letter-spacing: 0.06em;
+                color: rgba(180,220,255,0.65);
+                border-bottom: 1px solid rgba(80,160,255,0.08);
+            }
+            #surface-card-stats {
+                padding: 12px 18px 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .sc-stat-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .sc-stat-label {
+                font-family: "Share Tech Mono", monospace;
+                font-size: 9px;
+                letter-spacing: 0.15em;
+                color: rgba(80,160,255,0.45);
+                text-transform: uppercase;
+            }
+            .sc-stat-val {
+                font-family: "Share Tech Mono", monospace;
+                font-size: 11px;
+                letter-spacing: 0.06em;
+                color: rgba(160,220,255,0.85);
+            }
+            .sc-stat-bar {
+                height: 2px;
+                width: 100%;
+                background: rgba(80,160,255,0.08);
+                border-radius: 1px;
+                margin-top: 2px;
+            }
+            .sc-stat-bar-fill {
+                height: 100%;
+                background: var(--planet-accent, rgba(80,160,255,0.5));
+                border-radius: 1px;
+                transition: width 1.2s ease;
+                box-shadow: 0 0 6px var(--planet-accent, rgba(80,160,255,0.3));
+            }
+
+            /* Legacy elements hidden – replaced by card */
+            #surface-name { display: none; }
+            #surface-desc { display: none; }
+
+            #surface-card-action { padding:10px 18px 14px; border-top:1px solid rgba(80,160,255,0.08); }
+            .land-button {
+                width:100%; padding:10px 0; border:1px solid var(--planet-accent,rgba(80,160,255,0.5));
+                border-radius:4px; background:rgba(80,160,255,0.08); color:var(--planet-accent,rgba(120,200,255,0.9));
+                font-family:"Orbitron",sans-serif; font-size:11px; font-weight:700; letter-spacing:0.25em;
+                cursor:pointer; pointer-events:all; transition:all .3s; position:relative; overflow:hidden;
+                display:flex; align-items:center; justify-content:center;
+            }
+            .land-button .land-content { position:relative; z-index:2; display:flex; align-items:center; gap:8px; }
+            #land-dwell-bar {
+                position:absolute; left:0; top:0; bottom:0; width:0%;
+                background:var(--planet-accent,rgba(80,160,255,0.25));
+                transition: width 0.08s linear; z-index:1;
+            }
+            .land-button.dwelling { box-shadow:0 0 20px var(--planet-accent,rgba(80,160,255,0.3)); }
+            .land-button:hover { background:var(--planet-accent,rgba(80,160,255,0.12)); }
+            .land-button .land-icon { font-size:14px; animation:land-bounce 1.2s ease-in-out infinite; }
+            @keyframes land-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(3px)} }
+            .land-button.disabled { opacity:0.35; pointer-events:none; }
+
+            #planet-game-overlay {
+                position:fixed; inset:0; z-index:200; background:#000; display:none; flex-direction:column;
+            }
+            #planet-game-overlay.active { display:flex; }
+            #planet-game-overlay .game-topbar {
+                height:36px; background:rgba(4,8,20,0.95); border-bottom:1px solid rgba(80,160,255,0.2);
+                display:flex; align-items:center; padding:0 16px; gap:12px; flex-shrink:0; z-index:210;
+            }
+            .game-topbar .game-title { font-family:"Orbitron",sans-serif; font-size:11px; letter-spacing:0.15em; color:rgba(120,200,255,0.8); }
+            .game-topbar .game-back-btn {
+                margin-left:auto; border:1px solid rgba(80,160,255,0.3); border-radius:3px;
+                background:rgba(80,160,255,0.06); color:rgba(120,200,255,0.7); font-family:"Share Tech Mono",monospace;
+                font-size:10px; padding:4px 12px; cursor:pointer; transition:all .2s;
+            }
+            .game-topbar .game-back-btn:hover { background:rgba(80,160,255,0.15); color:#fff; }
+            #planet-game-container { flex:1; position:relative; overflow:hidden; }
+            #planet-game-container iframe { width:100%; height:100%; border:none; }
+
+            #surface-stats {
+                display: none;
+            }
+
+            /* ── Back button ──────────────────────────────────── */
+            #back-btn {
+                position: fixed;
+                top: 24px;
+                left: 28px;
+                z-index: 70;
+                display: none;
+                align-items: center;
+                gap: 10px;
+                font-family: "Share Tech Mono", monospace;
+                font-size: 11px;
+                letter-spacing: 0.12em;
+                color: rgba(120, 200, 255, 0.7);
+                cursor: pointer;
+                pointer-events: all;
+            }
+            #back-btn.visible {
+                display: flex;
+            }
+            #back-btn:hover {
+                color: #fff;
+            }
+            #back-ring {
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                border: 1px solid rgba(80, 160, 255, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                flex-shrink: 0;
+            }
+            #back-ring svg {
+                width: 14px;
+                height: 14px;
+            }
+            #back-ring-progress {
+                position: absolute;
+                inset: 0;
+                border-radius: 50%;
+                background: conic-gradient(
+                    rgba(80, 160, 255, 0.7) 0%,
+                    transparent 0%
+                );
+                transition: none;
+            }
+
+            /* ── Webcam preview ───────────────────────────────── */
+            #webcam-wrap {
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                z-index: 60;
+                width: 160px;
+                height: 120px;
+                border: 1px solid rgba(80, 160, 255, 0.25);
+                border-radius: 6px;
+                overflow: hidden;
+                background: #000;
+            }
+            #webcam-wrap video,
+            #webcam-wrap canvas {
+                width: 100% !important;
+                height: 100% !important;
+                object-fit: cover;
+            }
+            #webcam-wrap canvas {
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+            #webcam-label {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: rgba(0, 0, 10, 0.7);
+                font-size: 8px;
+                letter-spacing: 0.08em;
+                color: rgba(80, 160, 255, 0.6);
+                text-align: center;
+                padding: 2px 0;
+            }
+
+            /* ── Fade overlay ─────────────────────────────────── */
+            #fade {
+                position: fixed;
+                inset: 0;
+                z-index: 80;
+                background: #000;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.5s ease;
+            }
+            #fade.black {
+                opacity: 1;
+            }
+
+            /* ── Scan lines ───────────────────────────────────── */
+            #scanlines {
+                position: fixed;
+                inset: 0;
+                z-index: 55;
+                pointer-events: none;
+                background: repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(0, 0, 20, 0.03) 2px,
+                    rgba(0, 0, 20, 0.03) 4px
+                );
+            }
+
+            /* ════════════════════════════════════════════════════
+               COCKPIT OVERLAY
+            ════════════════════════════════════════════════════ */
+            :root {
+                --ck-lw: 13vw;
+                --ck-rw: 13vw;
+                --ck-th: 7vh;
+                --ck-bh: 27vh;
+                --ck-bd: rgba(80,160,255,0.28);
+                --ck-glow: rgba(80,160,255,0.7);
+                --ck-bg-dark: #04060e;
+                --ck-bg-mid: #080c1c;
+            }
+
+            /* Reposition original HUD elements inside screen area */
+            #hud {
+                top: calc(var(--ck-th) + 14px) !important;
+                left: calc(var(--ck-lw) + 14px) !important;
+            }
+            #back-btn {
+                top: calc(var(--ck-th) + 14px) !important;
+                left: calc(var(--ck-lw) + 14px) !important;
+            }
+            #webcam-wrap {
+                bottom: calc(var(--ck-bh) + 10px) !important;
+                right: calc(var(--ck-rw) + 10px) !important;
+            }
+            #surface-stats {
+                bottom: calc(var(--ck-bh) + 20px) !important;
+                left: calc(var(--ck-lw) + 20px) !important;
+            }
+
+            /* ── Cockpit root ── */
+            #cockpit {
+                position: fixed;
+                inset: 0;
+                z-index: 44;
+                pointer-events: none;
+                user-select: none;
+            }
+
+            /* ── Panel grid texture ── */
+            .ck-grid {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                background-image:
+                    linear-gradient(rgba(80,160,255,0.025) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(80,160,255,0.025) 1px, transparent 1px);
+                background-size: 18px 18px;
+            }
+
+            /* ── Top strip ── */
+            #ck-top {
+                position: absolute;
+                top: 0; left: 0; right: 0;
+                height: var(--ck-th);
+                background: linear-gradient(180deg, #03050b 0%, #070b18 100%);
+                border-bottom: 1px solid var(--ck-bd);
+                box-shadow: 0 2px 20px rgba(0,5,30,0.8);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 1.8vw;
+                z-index: 2;
+                overflow: hidden;
+            }
+            #ck-top::after {
+                content: '';
+                position: absolute;
+                bottom: 0; left: 5%; right: 5%;
+                height: 1px;
+                background: linear-gradient(to right, transparent, rgba(80,160,255,0.5), transparent);
+            }
+            .ck-top-group {
+                display: flex;
+                align-items: center;
+                gap: 0.6vw;
+            }
+            .ck-top-title {
+                font-family: 'Orbitron', sans-serif;
+                font-size: clamp(8px, 0.85vw, 12px);
+                font-weight: 700;
+                letter-spacing: 0.4em;
+                color: rgba(120,200,255,0.75);
+                text-transform: uppercase;
+                text-shadow: 0 0 12px rgba(80,160,255,0.5);
+            }
+            .ck-top-mono {
+                font-family: 'Share Tech Mono', monospace;
+                font-size: clamp(7px, 0.65vw, 10px);
+                color: rgba(80,160,255,0.5);
+                letter-spacing: 0.12em;
+            }
+            .ck-warn {
+                width: clamp(5px,0.42vw,7px);
+                height: clamp(5px,0.42vw,7px);
+                border-radius: 50%;
+            }
+            .ck-warn.g { background: #1ef070; box-shadow: 0 0 5px #1ef070; }
+            .ck-warn.a { background: #ffaa20; box-shadow: 0 0 5px #ffaa20; }
+            .ck-warn.r { background: #ff3040; box-shadow: 0 0 5px #ff3040; }
+            .ck-warn.c { background: #40c8ff; box-shadow: 0 0 5px #40c8ff; }
+            @keyframes ck-blink { 0%,49%{opacity:1}50%,100%{opacity:.08} }
+            .ck-warn.blink { animation: ck-blink 1.4s step-end infinite; }
+            .ck-warn.blink-fast { animation: ck-blink 0.5s step-end infinite; }
+
+            /* ── Side panels shared ── */
+            #ck-left, #ck-right {
+                position: absolute;
+                top: var(--ck-th);
+                bottom: var(--ck-bh);
+                background: linear-gradient(180deg, #04060f 0%, #070a18 60%, #050810 100%);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 1.4vh 0 1vh;
+                gap: 1vh;
+                overflow: hidden;
+            }
+            #ck-left {
+                left: 0;
+                width: var(--ck-lw);
+                border-right: 1px solid var(--ck-bd);
+                box-shadow: 4px 0 24px rgba(0,5,30,0.7);
+            }
+            #ck-right {
+                right: 0;
+                width: var(--ck-rw);
+                border-left: 1px solid var(--ck-bd);
+                box-shadow: -4px 0 24px rgba(0,5,30,0.7);
+            }
+            /* inner accent glow edges */
+            #ck-left::after {
+                content:'';
+                position:absolute;
+                top:15%;bottom:15%;right:0;
+                width:1px;
+                background:linear-gradient(to bottom,transparent,rgba(80,160,255,0.35),transparent);
+            }
+            #ck-right::after {
+                content:'';
+                position:absolute;
+                top:15%;bottom:15%;left:0;
+                width:1px;
+                background:linear-gradient(to bottom,transparent,rgba(80,160,255,0.35),transparent);
+            }
+
+            /* ── Panel label ── */
+            .ck-plabel {
+                font-family: 'Orbitron', sans-serif;
+                font-size: clamp(5px,0.55vw,8px);
+                letter-spacing: 0.35em;
+                color: rgba(80,160,255,0.38);
+                text-transform: uppercase;
+                border-bottom: 1px solid rgba(80,160,255,0.12);
+                width: 82%;
+                text-align: center;
+                padding-bottom: .5vh;
+            }
+
+            /* ── Throttle levers (manivelles) ── */
+            .ck-lever-row {
+                display: flex;
+                gap: clamp(4px,.55vw,10px);
+                align-items: center;
+                flex: 1;
+                padding: 0 .4vw;
+                min-height: 0;
+            }
+            .ck-lever {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: .4vh;
+                pointer-events: all;
+            }
+            .ck-lev-track {
+                position: relative;
+                width: clamp(8px,.7vw,14px);
+                flex: 1;
+                max-height: clamp(60px,12vh,120px);
+                background: rgba(0,0,0,.75);
+                border: 1px solid rgba(80,160,255,0.18);
+                border-radius: 3px;
+                box-shadow: inset 0 0 8px rgba(0,0,30,.9);
+                overflow: visible;
+            }
+            /* center groove */
+            .ck-lev-track::before {
+                content:'';
+                position:absolute;
+                left:50%;top:6px;bottom:6px;
+                width:2px;
+                transform:translateX(-50%);
+                background:rgba(80,160,255,0.1);
+                border-radius:1px;
+            }
+            .ck-lev-handle {
+                position: absolute;
+                left: 50%;
+                transform: translateX(-50%);
+                width: clamp(22px,2vw,32px);
+                height: clamp(12px,1.8vh,22px);
+                background: linear-gradient(180deg, #1c2e50 0%, #0e1c36 100%);
+                border: 1px solid rgba(80,160,255,0.55);
+                border-radius: 3px;
+                cursor: ns-resize;
+                box-shadow: 0 0 8px rgba(80,160,255,.25), inset 0 1px 0 rgba(255,255,255,.06);
+                transition: box-shadow .1s;
+                z-index: 2;
+            }
+            .ck-lev-handle::before {
+                content:'';
+                position:absolute;
+                left:3px;right:3px;top:50%;
+                height:1px;
+                background:rgba(80,160,255,0.55);
+                transform:translateY(-50%);
+            }
+            /* T-bar grip top */
+            .ck-lev-handle::after {
+                content:'';
+                position:absolute;
+                top:-6px;left:-5px;right:-5px;
+                height:5px;
+                background:linear-gradient(180deg,#253858,#1a2a48);
+                border:1px solid rgba(80,160,255,0.5);
+                border-radius:2px 2px 0 0;
+            }
+            .ck-lev-handle.active,
+            .ck-lev-handle:hover {
+                box-shadow: 0 0 16px rgba(80,160,255,.6), inset 0 1px 0 rgba(255,255,255,.1);
+                border-color: rgba(80,160,255,0.9);
+            }
+            .ck-lev-name {
+                font-family:'Share Tech Mono',monospace;
+                font-size:clamp(4px,.45vw,7px);
+                letter-spacing:.2em;
+                color:rgba(80,160,255,.38);
+            }
+            .ck-lev-pct {
+                font-family:'Share Tech Mono',monospace;
+                font-size:clamp(5px,.5vw,8px);
+                color:rgba(120,200,255,.65);
+                letter-spacing:.1em;
+            }
+
+            /* ── Dot row ── */
+            .ck-dot-row {
+                display:flex;
+                gap:.5vw;
+                align-items:center;
+            }
+            .ck-dot {
+                width:clamp(4px,.4vw,7px);
+                height:clamp(4px,.4vw,7px);
+                border-radius:50%;
+                background:rgba(60,60,60,.6);
+            }
+            .ck-dot.g { background:#1ef070; box-shadow:0 0 4px #1ef070; }
+            .ck-dot.a { background:#ffaa20; box-shadow:0 0 4px #ffaa20; animation:ck-blink 1.6s step-end infinite; }
+            .ck-dot.c { background:#40c8ff; box-shadow:0 0 4px #40c8ff; }
+            .ck-dot.r { background:#ff3040; box-shadow:0 0 4px #ff3040; animation:ck-blink .65s step-end infinite; }
+
+            /* ── Readout box ── */
+            .ck-readout {
+                width:84%;
+                background:rgba(0,4,16,.85);
+                border:1px solid rgba(80,160,255,.13);
+                border-radius:2px;
+                padding:.5vh .5vw;
+                text-align:center;
+            }
+            .ck-ro-lbl {
+                font-size:clamp(4px,.4vw,6px);
+                letter-spacing:.28em;
+                color:rgba(80,160,255,.35);
+                font-family:'Share Tech Mono',monospace;
+                text-transform:uppercase;
+            }
+            .ck-ro-val {
+                font-size:clamp(7px,.7vw,11px);
+                color:rgba(120,200,255,.82);
+                font-family:'Share Tech Mono',monospace;
+                letter-spacing:.08em;
+                margin-top:.2vh;
+            }
+
+            /* ── Fuel bar ── */
+            .ck-fuelbar {
+                width:84%;
+            }
+            .ck-fuelbar-hdr {
+                display:flex;
+                justify-content:space-between;
+                font-size:clamp(4px,.4vw,6px);
+                letter-spacing:.2em;
+                color:rgba(80,160,255,.35);
+                font-family:'Share Tech Mono',monospace;
+                margin-bottom:.3vh;
+            }
+            .ck-fuelbar-track {
+                height:3px;
+                background:rgba(0,0,0,.6);
+                border:1px solid rgba(80,160,255,.12);
+                border-radius:2px;
+                overflow:hidden;
+            }
+            .ck-fuelbar-fill {
+                height:100%;
+                background:linear-gradient(to right,#1080c0,#40e0ff);
+                box-shadow:0 0 6px rgba(80,160,255,.5);
+                border-radius:2px;
+                transition: width 4s linear;
+            }
+
+            /* ── Horizontal divider ── */
+            .ck-hline {
+                width:82%;
+                height:1px;
+                background:linear-gradient(to right,transparent,rgba(80,160,255,.18),transparent);
+            }
+
+            /* ── Canvas gauge ── */
+            .ck-gauge-wrap {
+                display:flex;
+                flex-direction:column;
+                align-items:center;
+                gap:.3vh;
+            }
+            .ck-gauge-lbl {
+                font-size:clamp(4px,.42vw,6px);
+                letter-spacing:.25em;
+                color:rgba(80,160,255,.32);
+                font-family:'Share Tech Mono',monospace;
+            }
+            .ck-gauge {
+                border-radius:50%;
+                background:rgba(0,0,0,.5);
+                border:1px solid rgba(80,160,255,.12);
+            }
+
+            /* ── Toggle switches ── */
+            .ck-sw-row { display:flex; gap:.5vw; }
+            .ck-sw {
+                display:flex;
+                flex-direction:column;
+                align-items:center;
+                gap:.3vh;
+                pointer-events:all;
+                cursor:pointer;
+            }
+            .ck-sw-body {
+                width:clamp(7px,.65vw,11px);
+                height:clamp(14px,2vh,24px);
+                background:#070c1a;
+                border:1px solid rgba(80,160,255,.22);
+                border-radius:2px;
+                position:relative;
+                transition:background .2s;
+            }
+            .ck-sw-body::before {
+                content:'';
+                position:absolute;
+                top:2px;left:1px;right:1px;
+                height:44%;
+                background:rgba(80,160,255,.08);
+                border-radius:1px;
+                transition:top .18s,background .18s;
+            }
+            .ck-sw.on .ck-sw-body { background:rgba(80,160,255,.14); box-shadow:0 0 5px rgba(80,160,255,.25); }
+            .ck-sw.on .ck-sw-body::before { top:54%; background:rgba(80,160,255,.65); box-shadow:0 0 4px rgba(80,160,255,.5); }
+            .ck-sw-lbl {
+                font-size:clamp(4px,.38vw,5px);
+                letter-spacing:.15em;
+                color:rgba(80,160,255,.3);
+                font-family:'Share Tech Mono',monospace;
+            }
+
+            /* ── Bottom console ── */
+            #ck-bottom {
+                position:absolute;
+                bottom:0;left:0;right:0;
+                height:var(--ck-bh);
+                background:linear-gradient(0deg,#02040b 0%,#060a18 100%);
+                border-top:1px solid var(--ck-bd);
+                box-shadow:0 -4px 30px rgba(0,5,30,.8);
+                overflow:hidden;
+            }
+            #ck-bottom::before {
+                content:'';
+                position:absolute;
+                top:0;left:8%;right:8%;
+                height:1px;
+                background:linear-gradient(to right,transparent,rgba(80,160,255,.5),transparent);
+            }
+            #ck-bot-inner {
+                width:100%;height:100%;
+                display:flex;
+                transform-origin:top center;
+                transform:perspective(600px) rotateX(14deg) translateY(-4px);
+            }
+            .ck-bot-side {
+                flex:1;
+                padding:1.5vh 1.2vw;
+                display:flex;
+                flex-direction:column;
+                gap:.8vh;
+            }
+            #ck-bot-center {
+                width:18%;
+                display:flex;
+                flex-direction:column;
+                align-items:center;
+                padding-top:.5vh;
+                gap:.4vh;
+            }
+
+            /* button grid */
+            .ck-btn-grid {
+                display:grid;
+                grid-template-columns:repeat(4,1fr);
+                gap:clamp(2px,.25vw,4px);
+            }
+            .ck-btn {
+                width:clamp(14px,1.6vw,26px);
+                height:clamp(8px,1.2vh,16px);
+                background:#07091a;
+                border:1px solid rgba(80,160,255,.16);
+                border-radius:2px;
+                cursor:pointer;
+                pointer-events:all;
+                position:relative;
+                transition:background .15s,box-shadow .15s;
+            }
+            .ck-btn.on {
+                background:rgba(80,160,255,.12);
+                box-shadow:0 0 6px rgba(80,160,255,.25),inset 0 0 3px rgba(80,160,255,.15);
+            }
+            .ck-btn.on::after {
+                content:'';
+                position:absolute;
+                top:2px;left:50%;
+                transform:translateX(-50%);
+                width:3px;height:3px;
+                border-radius:50%;
+                background:#40c8ff;
+                box-shadow:0 0 4px #40c8ff;
+            }
+            .ck-btn:hover { background:rgba(80,160,255,.08); }
+
+            /* Yoke SVG */
+            #ck-yoke {
+                width:clamp(44px,5.5vw,82px);
+                filter:drop-shadow(0 0 8px rgba(80,160,255,.35));
+            }
+            .ck-yoke-lbl {
+                font-size:clamp(4px,.4vw,6px);
+                letter-spacing:.25em;
+                color:rgba(80,160,255,.3);
+                font-family:'Share Tech Mono',monospace;
+            }
+
+            /* ── Screen bezel ── */
+            #ck-bezel {
+                position:absolute;
+                top:var(--ck-th);
+                left:var(--ck-lw);
+                right:var(--ck-rw);
+                bottom:var(--ck-bh);
+                pointer-events:none;
+                z-index:3;
+            }
+            #ck-bezel-border {
+                position:absolute;
+                inset:0;
+                border:2px solid rgba(80,160,255,.42);
+                box-shadow:
+                    inset 0 0 50px rgba(0,15,50,.35),
+                    0 0 30px rgba(80,160,255,.1),
+                    inset 0 0 2px rgba(80,160,255,.18);
+            }
+            /* subtle CRT vignette on screen */
+            #ck-bezel-vignette {
+                position:absolute;
+                inset:0;
+                background:radial-gradient(ellipse at center,transparent 55%,rgba(0,5,20,.55) 100%);
+            }
+            /* corner brackets */
+            .ck-crn {
+                position:absolute;
+                width:20px;
+                height:20px;
+            }
+            .ck-crn::before,.ck-crn::after {
+                content:'';
+                position:absolute;
+                background:rgba(80,160,255,.8);
+                border-radius:1px;
+            }
+            .ck-crn::before { width:100%;height:2px; }
+            .ck-crn::after  { width:2px;height:100%; }
+            .ck-crn.tl { top:-2px;left:-2px; }
+            .ck-crn.tr { top:-2px;right:-2px;transform:scaleX(-1); }
+            .ck-crn.bl { bottom:-2px;left:-2px;transform:scaleY(-1); }
+            .ck-crn.br { bottom:-2px;right:-2px;transform:scale(-1); }
+            #ck-screen-tag {
+                position:absolute;
+                bottom:-1px;
+                left:50%;
+                transform:translateX(-50%);
+                background:#060a18;
+                padding:0 14px;
+                font-family:'Orbitron',sans-serif;
+                font-size:clamp(6px,.6vw,9px);
+                letter-spacing:.3em;
+                color:rgba(80,160,255,.45);
+                white-space:nowrap;
+            }
+            #ck-screen-tag-top {
+                position:absolute;
+                top:-1px;
+                left:50%;
+                transform:translateX(-50%);
+                background:#060a18;
+                padding:0 14px;
+                font-family:'Share Tech Mono',monospace;
+                font-size:clamp(5px,.5vw,8px);
+                letter-spacing:.2em;
+                color:rgba(80,160,255,.3);
+                white-space:nowrap;
+            }
+        </style>
+        <script src="https://unpkg.com/ml5@1/dist/ml5.js"></script>
+    <script src="../shared/debug-tp.js"></script>
+    <script src="../shared/crystals.js"></script>
+</head>
+    <body>
+        <div id="loading">
+            <h2>⬡ Système Solaire</h2>
+            <div class="lbar"><div class="lfill"></div></div>
+            <p>Chargement WebGL + Détection de main…</p>
+        </div>
+
+        <div id="three-canvas"></div>
+        <canvas id="cursor-canvas"></canvas>
+        <div id="scanlines"></div>
+        <div id="fade"></div>
+
+        <div id="hud">
+            <h1>⬡ Système Solaire</h1>
+            <div id="hud-sub">WEBGL · ML5 · HANDPOSE</div>
+            <div id="status-line">⏳ Initialisation caméra…</div>
+            <div id="instructions">
+                ✦ Pointez votre index vers une planète<br />
+                ✦ Maintenez 1.5s pour atterrir<br />
+                ✦ Glisser souris pour orbiter<br />
+                ✦ Molette pour zoomer
+            </div>
+            <style>
+                #return-ship-btn {
+                    margin-top:12px; cursor:pointer; pointer-events:all;
+                    display:inline-flex; align-items:center; gap:10px;
+                    font-family:'Share Tech Mono',monospace; font-size:10px;
+                    letter-spacing:0.12em; color:rgba(255,160,80,0.8);
+                    border:1px solid rgba(255,160,80,0.3); border-radius:4px;
+                    padding:8px 16px; background:rgba(0,0,0,0.5);
+                    transition: all 0.3s; overflow:hidden; position:relative;
+                }
+                #return-ship-btn:hover {
+                    color:#ffcc80; border-color:rgba(255,160,80,0.6);
+                    background:rgba(255,160,80,0.08);
+                    box-shadow: 0 0 16px rgba(255,160,80,0.15);
+                }
+                #return-ship-btn .rocket {
+                    display:inline-block; font-size:14px;
+                    transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1.2), opacity 0.4s;
+                }
+                #return-ship-btn:hover .rocket {
+                    transform: translateY(-18px) scale(1.3);
+                    opacity: 0;
+                }
+                #return-ship-btn .rocket-trail {
+                    position:absolute; left:14px; bottom:4px;
+                    font-size:8px; opacity:0; transition: opacity 0.3s 0.1s;
+                    pointer-events:none;
+                }
+                #return-ship-btn:hover .rocket-trail {
+                    opacity:0.7;
+                }
+            </style>
+            <div id="return-ship-btn" onclick="window.location.href='../index.html'">
+                <span class="rocket">🚀</span>
+                <span class="rocket-trail">✦ ✦ ✦</span>
+                RETOUR VAISSEAU
+            </div>
+        </div>
+
+        <div id="planet-label">
+            <div class="pl-name" id="pl-name-text"></div>
+            <div class="pl-desc" id="pl-desc-text"></div>
+            <div class="pl-hint" id="pl-hint-text">Maintenez pour atterrir</div>
+        </div>
+
+        <div id="surface-hud">
+            <div id="surface-name"></div>
+            <div id="surface-desc"></div>
+            <div id="surface-card">
+                <div id="surface-card-header">
+                    <div id="surface-card-name"></div>
+                    <div id="surface-card-biome"></div>
+                </div>
+                <div id="surface-card-desc"></div>
+                <div id="surface-card-stats"></div>
+                <div id="surface-card-action">
+                    <div id="land-btn" class="land-button">
+                        <div id="land-dwell-bar"></div>
+                        <span class="land-content"><span class="land-icon">▼</span> ATTERRIR</span>
+                    </div>
+                </div>
+            </div>
+            <div id="surface-stats"></div>
+        </div>
+
+        <div id="back-btn">
+            <div id="back-ring">
+                <div id="back-ring-progress"></div>
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                >
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </div>
+            <span>RETOUR</span>
+        </div>
+
+        <div id="webcam-wrap">
+            <video id="webcam" autoplay playsinline muted></video>
+            <div id="webcam-label">HANDPOSE ML5</div>
+        </div>
+
+        <!-- ═══════════════ COCKPIT OVERLAY ═══════════════ -->
+        <div id="cockpit">
+          <div id="ck-top">
+            <div class="ck-top-group">
+              <div class="ck-warn g"></div>
+              <div class="ck-warn a blink"></div>
+              <div class="ck-warn r blink-fast"></div>
+              <span class="ck-top-mono" style="margin-left:.4vw">SYS·ONLINE</span>
+            </div>
+            <span class="ck-top-title">⬡ &nbsp; NAVIGATEUR STELLAIRE &nbsp; · &nbsp; SIÈGE PILOTE &nbsp; ⬡</span>
+            <div class="ck-top-group">
+              <span class="ck-top-mono" id="ck-clock">T+000:00:00</span>
+              <div class="ck-warn c" style="margin-left:.4vw"></div>
+              <div class="ck-warn g"></div>
+            </div>
+          </div>
+          <div id="ck-left">
+            <div class="ck-grid"></div>
+            <div class="ck-plabel">PROPULSION</div>
+            <div class="ck-lever-row">
+              <div class="ck-lever">
+                <div class="ck-lev-track" id="lev-track-0"><div class="ck-lev-handle" id="lev-handle-0"></div></div>
+                <div class="ck-lev-name">THRUST</div>
+                <div class="ck-lev-pct" id="lev-pct-0">72%</div>
+              </div>
+              <div class="ck-lever">
+                <div class="ck-lev-track" id="lev-track-1"><div class="ck-lev-handle" id="lev-handle-1"></div></div>
+                <div class="ck-lev-name">VECTOR</div>
+                <div class="ck-lev-pct" id="lev-pct-1">45%</div>
+              </div>
+              <div class="ck-lever">
+                <div class="ck-lev-track" id="lev-track-2"><div class="ck-lev-handle" id="lev-handle-2"></div></div>
+                <div class="ck-lev-name">WARP</div>
+                <div class="ck-lev-pct" id="lev-pct-2">18%</div>
+              </div>
+            </div>
+            <div class="ck-dot-row">
+              <div class="ck-dot g"></div><div class="ck-dot a"></div>
+              <div class="ck-dot c"></div><div class="ck-dot g"></div>
+            </div>
+            <div class="ck-readout">
+              <div class="ck-ro-lbl">VITESSE</div>
+              <div class="ck-ro-val" id="ck-speed-val">0.72 AU/h</div>
+            </div>
+            <div class="ck-hline"></div>
+            <div class="ck-fuelbar">
+              <div class="ck-fuelbar-hdr"><span>CARBURANT</span><span id="ck-fuel-pct">68%</span></div>
+              <div class="ck-fuelbar-track"><div class="ck-fuelbar-fill" id="ck-fuel-fill" style="width:68%"></div></div>
+            </div>
+          </div>
+          <div id="ck-right">
+            <div class="ck-grid"></div>
+            <div class="ck-plabel">NAVIGATION</div>
+            <div class="ck-gauge-wrap">
+              <canvas class="ck-gauge" id="g-az" width="80" height="80"></canvas>
+              <div class="ck-gauge-lbl">AZIMUTH</div>
+            </div>
+            <div class="ck-gauge-wrap">
+              <canvas class="ck-gauge" id="g-dist" width="70" height="70"></canvas>
+              <div class="ck-gauge-lbl">DISTANCE</div>
+            </div>
+            <div class="ck-hline"></div>
+            <div class="ck-sw-row">
+              <div class="ck-sw on"><div class="ck-sw-body"></div><div class="ck-sw-lbl">WARP</div></div>
+              <div class="ck-sw"><div class="ck-sw-body"></div><div class="ck-sw-lbl">SHLD</div></div>
+              <div class="ck-sw on"><div class="ck-sw-body"></div><div class="ck-sw-lbl">SCAN</div></div>
+              <div class="ck-sw"><div class="ck-sw-body"></div><div class="ck-sw-lbl">LOCK</div></div>
+            </div>
+            <div class="ck-readout">
+              <div class="ck-ro-lbl">COORDONNÉES</div>
+              <div class="ck-ro-val" id="ck-coord-val">α 142.8°</div>
+            </div>
+            <div class="ck-dot-row">
+              <div class="ck-dot c"></div><div class="ck-dot g"></div><div class="ck-dot a"></div>
+            </div>
+          </div>
+          <div id="ck-bottom">
+            <div class="ck-grid" style="position:absolute;inset:0;pointer-events:none;"></div>
+            <div id="ck-bot-inner">
+              <div class="ck-bot-side">
+                <div class="ck-plabel" style="width:100%">CONTRÔLES</div>
+                <div class="ck-btn-grid">
+                  <div class="ck-btn on"></div><div class="ck-btn"></div>
+                  <div class="ck-btn on"></div><div class="ck-btn"></div>
+                  <div class="ck-btn"></div><div class="ck-btn on"></div>
+                  <div class="ck-btn"></div><div class="ck-btn on"></div>
+                </div>
+                <div class="ck-readout" style="margin-top:auto">
+                  <div class="ck-ro-lbl">RÉACTEUR · TEMP</div>
+                  <div class="ck-ro-val" id="ck-temp-val">3 420 °K</div>
+                </div>
+              </div>
+              <div id="ck-bot-center">
+                <svg id="ck-yoke" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg">
+                  <defs><filter id="yk-g"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+                  <ellipse cx="50" cy="30" rx="35" ry="12" fill="none" stroke="rgba(80,160,255,0.55)" stroke-width="3.5" filter="url(#yk-g)"/>
+                  <ellipse cx="50" cy="30" rx="35" ry="12" fill="none" stroke="rgba(80,160,255,0.07)" stroke-width="9"/>
+                  <line x1="15" y1="30" x2="15" y2="66" stroke="rgba(80,160,255,0.45)" stroke-width="3.5" stroke-linecap="round"/>
+                  <line x1="85" y1="30" x2="85" y2="66" stroke="rgba(80,160,255,0.45)" stroke-width="3.5" stroke-linecap="round"/>
+                  <circle cx="19" cy="30" r="3.5" fill="#40c8ff" opacity=".75" filter="url(#yk-g)"/>
+                  <circle cx="81" cy="30" r="3.5" fill="#40c8ff" opacity=".75" filter="url(#yk-g)"/>
+                  <rect x="44" y="66" width="12" height="56" rx="3" fill="rgba(8,14,32,0.95)" stroke="rgba(80,160,255,0.4)" stroke-width="1.5"/>
+                  <line x1="44" y1="78" x2="56" y2="78" stroke="rgba(80,160,255,.2)" stroke-width="1"/>
+                  <line x1="44" y1="90" x2="56" y2="90" stroke="rgba(80,160,255,.2)" stroke-width="1"/>
+                  <line x1="44" y1="102" x2="56" y2="102" stroke="rgba(80,160,255,.2)" stroke-width="1"/>
+                  <rect x="46" y="70" width="8" height="5" rx="1.5" fill="rgba(80,160,255,.4)" stroke="rgba(80,160,255,.7)" stroke-width=".8" filter="url(#yk-g)"/>
+                  <ellipse cx="50" cy="122" rx="14" ry="4" fill="rgba(8,14,32,.95)" stroke="rgba(80,160,255,.22)" stroke-width="1"/>
+                </svg>
+                <div class="ck-yoke-lbl">MANŒUVRE</div>
+              </div>
+              <div class="ck-bot-side" style="align-items:flex-end">
+                <div class="ck-plabel" style="width:100%;text-align:right">SYSTÈMES</div>
+                <div class="ck-btn-grid">
+                  <div class="ck-btn on"></div><div class="ck-btn on"></div>
+                  <div class="ck-btn"></div><div class="ck-btn on"></div>
+                  <div class="ck-btn on"></div><div class="ck-btn"></div>
+                  <div class="ck-btn on"></div><div class="ck-btn"></div>
+                </div>
+                <div class="ck-readout" style="margin-top:auto">
+                  <div class="ck-ro-lbl">INTÉGRITÉ COQUE</div>
+                  <div class="ck-ro-val" id="ck-hull-val">97.3%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="ck-bezel">
+            <div id="ck-bezel-border"></div>
+            <div id="ck-bezel-vignette"></div>
+            <div class="ck-crn tl"></div><div class="ck-crn tr"></div>
+            <div class="ck-crn bl"></div><div class="ck-crn br"></div>
+            <div id="ck-screen-tag-top">AFFICHAGE NAV · HAUTE RÉSOLUTION</div>
+            <div id="ck-screen-tag">⬡ &nbsp; SECTEUR·7G &nbsp; · &nbsp; ZOOM ACTIF &nbsp; ⬡</div>
+          </div>
+        </div><!-- end #cockpit -->
+
+        <!-- Three.js r128 -->
+        <!-- ═══════════════ PLANET GAME OVERLAY ═══════════════ -->
+        <div id="planet-game-overlay">
+            <div class="game-topbar">
+                <span class="game-title" id="game-overlay-title">PLANÈTE</span>
+                <button class="game-back-btn" id="game-back-btn">◀ RETOUR ORBITE</button>
+            </div>
+            <div id="planet-game-container"></div>
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+        <script>
+            // ════════════════════════════════════════════════════════
+            //  PLANET DEFINITIONS  (5 planètes)
+            // ════════════════════════════════════════════════════════
+            const PLANET_DEFS = [
+                {
+                    name: "Gambling",
+                    desc: "Casinos flottants · Néons éternels",
+                    radius: 22, orbitR: 120, speed: 0.008, tilt: 0,
+                    color: 0xffd700, glowColor: 0xffaa00, rings: true, moons: 2,
+                    surfaceDesc: "Cités de néons dorés où les dés ne cessent de rouler",
+                    biome: "CASINO", skyColor: 0x1a0a00, atmoColor: 0xffcc00,
+                    moreStats: ["Temp: 310°K", "Atm: Néon, Or gazeux", "Rotation: 21h"],
+                },
+                {
+                    name: "Musique",
+                    desc: "Ondes sonores vivantes · Océans de fréquences",
+                    radius: 18, orbitR: 195, speed: 0.007, tilt: 0,
+                    color: 0xdd44ff, glowColor: 0xff66ff, rings: false, moons: 3,
+                    surfaceDesc: "Montagnes d'ondes sonores cristallisées · Forêts d'instruments",
+                    biome: "HARMONIQUE", skyColor: 0x0a0018, atmoColor: 0xcc44ff,
+                    moreStats: ["Temp: 293°K", "Atm: Vibrations, Résonance", "Rotation: 24h"],
+                },
+                {
+                    name: "Manga",
+                    desc: "Cités d'encre · Ciels de cases dessinées",
+                    radius: 26, orbitR: 275, speed: 0.006, tilt: 0,
+                    color: 0xff3366, glowColor: 0xff5588, rings: true, moons: 2,
+                    surfaceDesc: "Tours de papier géantes · Rues tracées à l'encre noire",
+                    biome: "ENCRIER", skyColor: 0x120008, atmoColor: 0xff4477,
+                    moreStats: ["Temp: 300°K", "Atm: Encre, Toner, Sakura", "Rotation: 16h"],
+                },
+                {
+                    name: "Nourriture",
+                    desc: "Continents comestibles · Mers de saveurs",
+                    radius: 30, orbitR: 365, speed: 0.005, tilt: 0,
+                    color: 0xff8830, glowColor: 0xffaa50, rings: false, moons: 1,
+                    surfaceDesc: "Volcans de chocolat fondu · Plaines de fromage",
+                    biome: "GASTRONOMIQUE", skyColor: 0x140800, atmoColor: 0xff9940,
+                    moreStats: ["Temp: 305°K", "Atm: Arômes, Vapeur, Épices", "Rotation: 28h"],
+                },
+                {
+                    name: "Tron",
+                    desc: "Grilles numériques · Flux de données infinis",
+                    radius: 20, orbitR: 455, speed: 0.004, tilt: 0,
+                    color: 0x00eeff, glowColor: 0x00ffff, rings: true, moons: 4,
+                    surfaceDesc: "Paysages de néon cyan · Autoroutes de lumière",
+                    biome: "NUMÉRIQUE", skyColor: 0x000a10, atmoColor: 0x00ddff,
+                    moreStats: ["Temp: 0°K (digital)", "Atm: Photons, Data, Code", "Rotation: ∞"],
+                },
+                {
+                    name: "Danse",
+                    desc: "Aurores rythmiques · Sols vibrants",
+                    radius: 17, orbitR: 540, speed: 0.0035, tilt: 0,
+                    color: 0xff2090, glowColor: 0xff40aa, rings: false, moons: 2,
+                    surfaceDesc: "Plateaux lumineux pulsants · Geysers de paillettes",
+                    biome: "DANCEFLOOR", skyColor: 0x10000a, atmoColor: 0xff30aa,
+                    moreStats: ["Temp: 320°K", "Atm: Bass, Strobe, Sueur", "Rotation: 8h"],
+                },
+                {
+                    name: "Sable",
+                    desc: "Dunes infinies · Tempêtes dorées",
+                    radius: 24, orbitR: 630, speed: 0.003, tilt: 0,
+                    color: 0xddaa55, glowColor: 0xeebb66, rings: true, moons: 1,
+                    surfaceDesc: "Déserts sans fin sous trois soleils · Oasis de cristal",
+                    biome: "DÉSERTIQUE", skyColor: 0x100a02, atmoColor: 0xddaa44,
+                    moreStats: ["Temp: 450°K", "Atm: Silice, Vent, Quartz", "Rotation: 42h"],
+                },
+            ];
+
+            // ════════════════════════════════════════════════════════
+            //  STATE MACHINE
+            // ════════════════════════════════════════════════════════
+            const S = {
+                OVERVIEW: 0,
+                TRANSITIONING: 1,
+                SURFACE: 2,
+                RETURNING: 3,
+            };
+            let state = S.OVERVIEW;
+            let selectedPlanet = null;
+            let transProgress = 0; // 0→1 for transitions
+            let surfaceTime = 0;
+
+            // ════════════════════════════════════════════════════════
+            //  THREE.JS SETUP
+            // ════════════════════════════════════════════════════════
+            const W = window.innerWidth,
+                H = window.innerHeight;
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(W, H);
+            renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+            renderer.setClearColor(0x00000a);
+            document
+                .getElementById("three-canvas")
+                .appendChild(renderer.domElement);
+
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x00000a, 0.00018);
+
+            const camera = new THREE.PerspectiveCamera(62, W / H, 0.5, 18000);
+
+            // Overview camera config – vue plongeante plus intuitive
+            const OV_POS = new THREE.Vector3(0, 520, 400);
+            const OV_TARGET = new THREE.Vector3(0, -30, 0);
+            camera.position.copy(OV_POS);
+            camera.lookAt(OV_TARGET);
+
+            // ── Lights ─────────────────────────────────────────────
+            const sunLight = new THREE.PointLight(0xffe090, 2.8, 3000, 1.5);
+            sunLight.position.set(0, 0, 0);
+            scene.add(sunLight);
+
+            const sunLight2 = new THREE.PointLight(0xff9030, 1.2, 2500, 2);
+            scene.add(sunLight2);
+
+            scene.add(new THREE.AmbientLight(0x101828, 0.8));
+
+            // ════════════════════════════════════════════════════════
+            //  SHADERS
+            // ════════════════════════════════════════════════════════
+            const ATMO_VERT = `
+  varying vec3 vNormal;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+  }
+`;
+            const ATMO_FRAG = `
+  uniform vec3 uColor;
+  varying vec3 vNormal;
+  void main() {
+    float d = dot(vNormal, vec3(0.0,0.0,1.0));
+    float intensity = pow(max(0.0, 0.72 - abs(d)), 2.2);
+    gl_FragColor = vec4(uColor, intensity);
+  }
+`;
+
+            const PLANET_FRAG = `
+  uniform vec3 uColor;
+  uniform vec3 uDark;
+  uniform float uTime;
+  varying vec3 vNormal;
+  varying vec3 vPos;
+  // simple hash noise
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  float noise(vec2 p){
+    vec2 i=floor(p); vec2 f=fract(p);
+    float a=hash(i), b=hash(i+vec2(1,0)), c=hash(i+vec2(0,1)), d=hash(i+vec2(1,1));
+    vec2 u=f*f*(3.0-2.0*f);
+    return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);
+  }
+  void main() {
+    vec2 uv = vec2(atan(vPos.z,vPos.x)*0.159+0.5+uTime*0.008, acos(vPos.y)*0.318);
+    float n1=noise(uv*4.0);
+    float n2=noise(uv*9.0+0.5)*0.4;
+    float n=n1+n2;
+    vec3 col=mix(uDark, uColor, clamp(n,0.0,1.0));
+    gl_FragColor=vec4(col,1.0);
+  }
+`;
+            const PLANET_VERT = `
+  varying vec3 vNormal;
+  varying vec3 vPos;
+  void main(){
+    vNormal=normalize(normalMatrix*normal);
+    vPos=normalize(position);
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+  }
+`;
+
+            // ════════════════════════════════════════════════════════
+            //  STARFIELD
+            // ════════════════════════════════════════════════════════
+            function makeStars(count) {
+                const geo = new THREE.BufferGeometry();
+                const pos = new Float32Array(count * 3);
+                const col = new Float32Array(count * 3);
+                for (let i = 0; i < count; i++) {
+                    const r = 4000 + Math.random() * 4000;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                    pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+                    pos[i * 3 + 2] = r * Math.cos(phi);
+                    const t = Math.random();
+                    // slight colour variation: white, blue-white, warm
+                    const tints = [
+                        [1, 0.95, 0.85],
+                        [0.85, 0.92, 1],
+                        [1, 1, 1],
+                        [0.9, 0.85, 1],
+                    ];
+                    const tc = tints[Math.floor(Math.random() * tints.length)];
+                    col[i * 3] = tc[0];
+                    col[i * 3 + 1] = tc[1];
+                    col[i * 3 + 2] = tc[2];
+                }
+                geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+                geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+                return new THREE.Points(
+                    geo,
+                    new THREE.PointsMaterial({
+                        size: 2.2,
+                        vertexColors: true,
+                        sizeAttenuation: true,
+                        transparent: true,
+                        opacity: 0.85,
+                    }),
+                );
+            }
+            scene.add(makeStars(25500));
+
+            // ════════════════════════════════════════════════════════
+            //  NEBULA CLOUDS
+            // ════════════════════════════════════════════════════════
+            const NEBULA_COLORS = [
+                [0.08, 0.05, 0.2],
+                [0.0, 0.05, 0.18],
+                [0.12, 0.04, 0.14],
+                [0.0, 0.08, 0.12],
+                [0.05, 0.0, 0.16],
+            ];
+            for (let i = 0; i < 80; i++) {
+                const nc =
+                    NEBULA_COLORS[
+                        Math.floor(Math.random() * NEBULA_COLORS.length)
+                    ];
+                const mat = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color(nc[0], nc[1], nc[2]),
+                    transparent: true,
+                    opacity: Math.random() * 0.06 + 0.02,
+                    depthWrite: false,
+                    side: THREE.BackSide,
+                });
+                const m = new THREE.Mesh(
+                    new THREE.SphereGeometry(Math.random() * 200 + 80, 8, 8),
+                    mat,
+                );
+                const r = 800 + Math.random() * 1400;
+                const a = Math.random() * Math.PI * 2,
+                    b = (Math.random() - 0.5) * Math.PI;
+                m.position.set(
+                    r * Math.cos(a) * Math.cos(b),
+                    r * Math.sin(b),
+                    r * Math.sin(a) * Math.cos(b),
+                );
+                scene.add(m);
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  SUN
+            // ════════════════════════════════════════════════════════
+            function makeSun() {
+                const g = new THREE.Group();
+                // Core
+                const core = new THREE.Mesh(
+                    new THREE.SphereGeometry(48, 32, 32),
+                    new THREE.MeshBasicMaterial({ color: 0xffee70 }),
+                );
+                g.add(core);
+                // Glow layers
+                const glowColors = [0xffcc30, 0xff9010, 0xff6000, 0xff3000];
+                const glowSizes = [1.25, 1.55, 2.0, 2.8];
+                const glowAlphas = [0.12, 0.07, 0.04, 0.02];
+                glowColors.forEach((col, i) => {
+                    const gm = new THREE.Mesh(
+                        new THREE.SphereGeometry(48 * glowSizes[i], 24, 24),
+                        new THREE.MeshBasicMaterial({
+                            color: col,
+                            transparent: true,
+                            opacity: glowAlphas[i],
+                            side: THREE.FrontSide,
+                            depthWrite: false,
+                            blending: THREE.AdditiveBlending,
+                        }),
+                    );
+                    g.add(gm);
+                });
+                // Sun surface shimmer (slow rotation)
+                const shimmer = new THREE.Mesh(
+                    new THREE.SphereGeometry(49, 20, 20),
+                    new THREE.MeshBasicMaterial({
+                        color: 0xffaa20,
+                        transparent: true,
+                        opacity: 0.18,
+                        wireframe: false,
+                        blending: THREE.AdditiveBlending,
+                    }),
+                );
+                g.add(shimmer);
+                g.userData.shimmer = shimmer;
+                scene.add(g);
+                return g;
+            }
+            const sun = makeSun();
+
+            // ════════════════════════════════════════════════════════
+            //  PLANETS
+            // ════════════════════════════════════════════════════════
+            const planets = [];
+
+            function makeAtmo(r, col) {
+                return new THREE.Mesh(
+                    new THREE.SphereGeometry(r * 1.22, 32, 32),
+                    new THREE.ShaderMaterial({
+                        vertexShader: ATMO_VERT,
+                        fragmentShader: ATMO_FRAG,
+                        uniforms: { uColor: { value: new THREE.Color(col) } },
+                        blending: THREE.AdditiveBlending,
+                        side: THREE.FrontSide,
+                        transparent: true,
+                        depthWrite: false,
+                    }),
+                );
+            }
+
+            function makeRings(r, baseColor) {
+                const g = new THREE.Group();
+                const c = new THREE.Color(baseColor);
+                for (let i = 0; i < 5; i++) {
+                    const inner = r * (1.45 + i * 0.28);
+                    const outer = inner + r * 0.12;
+                    const rg = new THREE.RingGeometry(inner, outer, 64);
+                    const rm = new THREE.MeshBasicMaterial({
+                        color: c,
+                        transparent: true,
+                        opacity: 0.22 - i * 0.03,
+                        side: THREE.DoubleSide,
+                        depthWrite: false,
+                    });
+                    const ring = new THREE.Mesh(rg, rm);
+                    ring.rotation.x = Math.PI / 2 + 0.35;
+                    g.add(ring);
+                }
+                return g;
+            }
+
+            function makeMoon(planetR, moonIndex, total) {
+                const mr = planetR * 0.18;
+                const orbitR = planetR * (2.0 + moonIndex * 0.9);
+                const geo = new THREE.SphereGeometry(mr, 12, 12);
+                const mat = new THREE.MeshPhongMaterial({
+                    color: 0x999999,
+                    shininess: 5,
+                });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.userData.orbitR = orbitR;
+                mesh.userData.speed = 0.025 + moonIndex * 0.008;
+                mesh.userData.angle = Math.random() * Math.PI * 2;
+                mesh.userData.tiltX = (Math.random() - 0.5) * 0.6;
+                return mesh;
+            }
+
+            PLANET_DEFS.forEach((def, idx) => {
+                const group = new THREE.Group();
+                const orbit = new THREE.Group();
+                scene.add(orbit);
+                orbit.add(group);
+
+                // Planet body (procedural shader)
+                const baseCol = new THREE.Color(def.color);
+                const darkCol = baseCol.clone().multiplyScalar(0.3);
+                const bodyMesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(def.radius, 36, 36),
+                    new THREE.ShaderMaterial({
+                        vertexShader: PLANET_VERT,
+                        fragmentShader: PLANET_FRAG,
+                        uniforms: {
+                            uColor: { value: baseCol.clone() },
+                            uDark: { value: darkCol },
+                            uTime: { value: 0 },
+                        },
+                        lights: false,
+                    }),
+                );
+                // Override with phong for lighting
+                const bodyPhong = new THREE.Mesh(
+                    new THREE.SphereGeometry(def.radius, 36, 36),
+                    new THREE.MeshPhongMaterial({
+                        color: def.color,
+                        emissive: new THREE.Color(def.color).multiplyScalar(
+                            0.05,
+                        ),
+                        shininess: 20,
+                        transparent: false,
+                    }),
+                );
+                group.add(bodyPhong);
+
+                // Atmosphere
+                const atmo = makeAtmo(def.radius, def.glowColor);
+                group.add(atmo);
+
+                // Rings
+                if (def.rings) {
+                    const rings = makeRings(def.radius, def.color);
+                    group.add(rings);
+                }
+
+                // Moons
+                const moonObjs = [];
+                for (let m = 0; m < def.moons; m++) {
+                    const moon = makeMoon(def.radius, m, def.moons);
+                    group.add(moon);
+                    moonObjs.push(moon);
+                }
+
+                // Orbit ring (visible path)
+                const orbitRingGeo = new THREE.BufferGeometry();
+                const orbitPts = [];
+                for (let a = 0; a <= Math.PI * 2 + 0.01; a += 0.04) {
+                    orbitPts.push(
+                        Math.cos(a) * def.orbitR,
+                        0,
+                        Math.sin(a) * def.orbitR,
+                    );
+                }
+                orbitRingGeo.setAttribute(
+                    "position",
+                    new THREE.BufferAttribute(new Float32Array(orbitPts), 3),
+                );
+                const orbitLine = new THREE.Line(
+                    orbitRingGeo,
+                    new THREE.LineBasicMaterial({
+                        color: 0xffffff,
+                        transparent: true,
+                        opacity: 0.06,
+                    }),
+                );
+                scene.add(orbitLine);
+
+                // Initial angle (stagger for visual spread)
+                const initAngle =
+                    (idx / PLANET_DEFS.length) * Math.PI * 2 + Math.PI * 0.15;
+
+                const pl = {
+                    ...def,
+                    idx,
+                    group,
+                    orbit,
+                    bodyPhong,
+                    atmo,
+                    moonObjs,
+                    angle: initAngle,
+                    screenX: 0,
+                    screenY: 0,
+                    screenR: 0,
+                    hovered: false,
+                };
+                planets.push(pl);
+            });
+
+            // ════════════════════════════════════════════════════════
+            //  OVERVIEW ORBIT (gentle auto-pan)
+            // ════════════════════════════════════════════════════════
+            let ovAutoAngle = 0;
+            // Mouse orbit
+            let isDragging = false,
+                prevMX = 0,
+                prevMY = 0;
+            let orbitTheta = 0.4,
+                orbitPhi = 0.55,
+                orbitDist = 850;
+            const minDist = 200,
+                maxDist = 1500;
+
+            renderer.domElement.addEventListener("mousedown", (e) => {
+                if (state !== S.OVERVIEW) return;
+                isDragging = true;
+                prevMX = e.clientX;
+                prevMY = e.clientY;
+            });
+            window.addEventListener("mouseup", () => {
+                isDragging = false;
+            });
+            window.addEventListener("mousemove", (e) => {
+                if (!isDragging || state !== S.OVERVIEW) return;
+                orbitTheta -= (e.clientX - prevMX) * 0.004;
+                orbitPhi -= (e.clientY - prevMY) * 0.004;
+                orbitPhi = Math.max(0.08, Math.min(Math.PI - 0.08, orbitPhi));
+                prevMX = e.clientX;
+                prevMY = e.clientY;
+            });
+            renderer.domElement.addEventListener(
+                "wheel",
+                (e) => {
+                    if (state !== S.OVERVIEW) return;
+                    orbitDist = Math.max(
+                        minDist,
+                        Math.min(maxDist, orbitDist + e.deltaY * 0.35),
+                    );
+                },
+                { passive: true },
+            );
+
+            // ════════════════════════════════════════════════════════
+            //  CURSOR CANVAS (2D overlay)
+            // ════════════════════════════════════════════════════════
+            const cursorCvs = document.getElementById("cursor-canvas");
+            cursorCvs.width = window.innerWidth;
+            cursorCvs.height = window.innerHeight;
+            const ctx2d = cursorCvs.getContext("2d");
+
+            // ════════════════════════════════════════════════════════
+            //  HAND TRACKING STATE
+            // ════════════════════════════════════════════════════════
+            let handX = -9999,
+                handY = -9999;
+            let handRawX = -9999,
+                handRawY = -9999;
+            let handSmoothedX = -9999,
+                handSmoothedY = -9999;
+            let handVelX = 0, handVelY = 0;
+            const HAND_SMOOTH = 0.35; // exponential smoothing factor (lower = smoother)
+            const HAND_DEADZONE = 2.5; // pixels – ignore micro-jitter below this
+            let mlReady = false;
+            let handpose = null,
+                predictions = [];
+            let dwellPlanet = null,
+                dwellTimer = 0;
+            const DWELL_THRESHOLD = 1500; // ms
+
+            // Mouse fallback cursor
+            let mouseX = -9999,
+                mouseY = -9999;
+            window.addEventListener("mousemove", (e) => {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+
+            // Mouse click fallback
+            let mouseClicked = false;
+            window.addEventListener("click", (e) => {
+                if (state !== S.OVERVIEW) return;
+                const mx = e.clientX,
+                    my = e.clientY;
+                let best = null,
+                    bestD = Infinity;
+                const distFactor = Math.max(1, orbitDist / 400);
+                const hitMult = 2.5 * distFactor;
+                const MIN_HIT_PX = 28;
+                planets.forEach((pl) => {
+                    const hitRadius = Math.max(pl.screenR * hitMult, MIN_HIT_PX);
+                    const d = Math.hypot(pl.screenX - mx, pl.screenY - my);
+                    if (d < hitRadius && d < bestD) {
+                        bestD = d;
+                        best = pl;
+                    }
+                });
+                if (best) triggerTransition(best);
+            });
+
+            // ════════════════════════════════════════════════════════
+            //  ML5 HAND DETECTION
+            // ════════════════════════════════════════════════════════
+            function initHand() {
+                const vidEl = document.getElementById("webcam");
+
+                // 1. On force les dimensions EXACTES de la vidéo pour que l'IA ne soit pas aveugle
+                vidEl.width = 320;
+                vidEl.height = 240;
+
+                navigator.mediaDevices
+                    .getUserMedia({
+                        video: { width: 320, height: 240, facingMode: "user" },
+                    })
+                    .then((stream) => {
+                        vidEl.srcObject = stream;
+                        vidEl.play();
+                        setStatus("⟳ Chargement modèle HandPose…");
+
+                        // 2. On ATTEND que la vidéo affiche réellement la première image
+                        vidEl.onloadeddata = () => {
+                            const tryLoad = setInterval(() => {
+                                if (window.ml5) {
+                                    clearInterval(tryLoad);
+
+                                    // 3. On passe directement la vidéo au modèle dès le début
+                                    ml5.handPose(vidEl, { flipped: true })
+                                        .then((model) => {
+                                            handpose = model;
+                                            mlReady = true;
+                                            setStatus(
+                                                "✦ Détection de main active",
+                                            );
+
+                                            // 4. On lance la boucle de détection
+                                            handpose.detectStart(
+                                                vidEl,
+                                                (results) => {
+                                                    // Mouchard directement à la source !
+                                                    if (
+                                                        results &&
+                                                        results.length > 0 &&
+                                                        Math.random() < 0.05
+                                                    ) {
+                                                        console.log(
+                                                            "L'IA envoie des données :",
+                                                            results,
+                                                        );
+                                                    }
+                                                    predictions = results;
+                                                },
+                                            );
+                                        })
+                                        .catch((err) => {
+                                            console.error(err);
+                                            setStatus(
+                                                "⚠ Erreur IA · Mode souris",
+                                            );
+                                        });
+                                }
+                            }, 200);
+                        };
+                    })
+                    .catch(() => {
+                        setStatus("⚠ Caméra refusée · Mode souris");
+                    });
+            }
+
+            function stopHand() {
+                // Arrête la détection handpose et libère la caméra
+                // pour que l'iframe planète puisse y accéder
+                if (handpose) {
+                    try { handpose.detectStop(); } catch(e) {}
+                }
+                mlReady = false;
+                predictions = [];
+                const vidEl = document.getElementById("webcam");
+                if (vidEl && vidEl.srcObject) {
+                    vidEl.srcObject.getTracks().forEach(t => t.stop());
+                    vidEl.srcObject = null;
+                }
+            }
+
+            function processHand() {
+                // 1. Si aucune main n'est détectée, on cache le curseur
+                if (!predictions || predictions.length === 0) {
+                    handX = -9999;
+                    handY = -9999;
+                    handSmoothedX = -9999;
+                    handSmoothedY = -9999;
+                    return;
+                }
+
+                const hand = predictions[0];
+
+                // 2. Dans ml5 v1, les points de la main sont dans un tableau "keypoints"
+                // Le bout de l'index est TOUJOURS le point numéro 8
+                if (hand.keypoints && hand.keypoints.length > 8) {
+                    const tip = hand.keypoints[8];
+
+                    // 3. On convertit la position de la caméra (320x240) vers la taille de l'écran
+                    // avec un mapping élargi pour compenser la zone utile réduite quand la caméra est loin
+                    const vidW = 320, vidH = 240;
+                    // zone utile réduite: on mappe la zone centrale de la vidéo sur tout l'écran
+                    const margin = 0.12; // 12% de marge de chaque côté
+                    const rawNormX = (tip.x / vidW - margin) / (1 - 2 * margin);
+                    const rawNormY = (tip.y / vidH - margin) / (1 - 2 * margin);
+                    handRawX = Math.max(0, Math.min(1, rawNormX)) * window.innerWidth;
+                    handRawY = Math.max(0, Math.min(1, rawNormY)) * window.innerHeight;
+
+                    // 4. Smoothing exponentiel – élimine le jitter
+                    if (handSmoothedX < -100) {
+                        // Premier point : pas de smoothing
+                        handSmoothedX = handRawX;
+                        handSmoothedY = handRawY;
+                    } else {
+                        const dx = handRawX - handSmoothedX;
+                        const dy = handRawY - handSmoothedY;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // Smoothing adaptatif: mouvements rapides = moins de lissage (plus réactif)
+                        // Mouvements lents = plus de lissage (plus stable)
+                        const adaptiveSmooth = dist > 60 ? 0.6 : dist > 25 ? HAND_SMOOTH : 0.18;
+                        
+                        if (dist > HAND_DEADZONE) {
+                            handSmoothedX += dx * adaptiveSmooth;
+                            handSmoothedY += dy * adaptiveSmooth;
+                        }
+                    }
+
+                    handVelX = handRawX - handX;
+                    handVelY = handRawY - handY;
+                    handX = handSmoothedX;
+                    handY = handSmoothedY;
+                } else {
+                    handX = -9999;
+                    handY = -9999;
+                }
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  PLANET SCREEN PROJECTION
+            // ════════════════════════════════════════════════════════
+            function updateScreenPos(pl) {
+                const wp = new THREE.Vector3();
+                pl.group.getWorldPosition(wp);
+                const ndc = wp.clone().project(camera);
+                pl.screenX = ((ndc.x + 1) / 2) * window.innerWidth;
+                pl.screenY = ((1 - ndc.y) / 2) * window.innerHeight;
+                // Approximate screen radius
+                const dist = camera.position.distanceTo(wp);
+                const fovRad = (camera.fov * Math.PI) / 180;
+                pl.screenR =
+                    (pl.radius / dist) *
+                    (window.innerHeight / (2 * Math.tan(fovRad / 2)));
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  DWELL DETECTION
+            // ════════════════════════════════════════════════════════
+            function updateDwell(dt) {
+                if (state !== S.OVERVIEW) return;
+
+                const cx = handX > -100 ? handX : mouseX;
+                const cy = handX > -100 ? handY : mouseY;
+                if (cx < 0) return;
+
+                // Adaptive hit zone: quand la caméra est loin, les planètes sont petites
+                // on agrandit la zone de détection proportionnellement
+                const baseMult = 2.8;
+                // Plus la caméra est loin, plus on multiplie la zone de hit
+                const distFactor = Math.max(1, orbitDist / 400);
+                const hitMult = baseMult * distFactor;
+                // Minimum absolu en pixels pour que ça reste cliquable même de très loin
+                const MIN_HIT_PX = 28;
+
+                let closest = null,
+                    closestD = Infinity;
+                planets.forEach((pl) => {
+                    const hitRadius = Math.max(pl.screenR * hitMult, MIN_HIT_PX);
+                    const d = Math.hypot(pl.screenX - cx, pl.screenY - cy);
+                    if (d < hitRadius && d < closestD) {
+                        closestD = d;
+                        closest = pl;
+                    }
+                });
+
+                if (closest === dwellPlanet && closest !== null) {
+                    dwellTimer += dt;
+                    if (dwellTimer >= DWELL_THRESHOLD) {
+                        triggerTransition(closest);
+                        dwellTimer = 0;
+                    }
+                } else {
+                    dwellPlanet = closest;
+                    dwellTimer = 0;
+                }
+
+                // Planet hover highlight
+                planets.forEach((pl) => {
+                    pl.hovered = pl === closest;
+                    // Scale glow
+                    const targetScale = pl.hovered ? 1.08 : 1.0;
+                    pl.atmo.scale.lerp(
+                        new THREE.Vector3(
+                            targetScale,
+                            targetScale,
+                            targetScale,
+                        ),
+                        0.12,
+                    );
+                });
+            }
+
+            // Back button dwell
+            let backDwell = 0;
+            function updateBackDwell(dt) {
+                if (state !== S.SURFACE) return;
+                const cx = handX > -100 ? handX : mouseX;
+                const cy = handX > -100 ? handY : mouseY;
+                const backEl = document.getElementById("back-btn");
+                const backRect = backEl.getBoundingClientRect();
+                const bx = (backRect.left + backRect.right) / 2;
+                const by = (backRect.top + backRect.bottom) / 2;
+                const d = Math.hypot(cx - bx, cy - by);
+                if (d < 60) {
+                    backDwell += dt;
+                    const pct = Math.min(backDwell / DWELL_THRESHOLD, 1);
+                    document.getElementById(
+                        "back-ring-progress",
+                    ).style.background =
+                        `conic-gradient(rgba(80,160,255,0.8) ${pct * 360}deg, transparent ${pct * 360}deg)`;
+                    if (backDwell >= DWELL_THRESHOLD) {
+                        backDwell = 0;
+                        triggerReturn();
+                    }
+                } else {
+                    backDwell = 0;
+                    document.getElementById(
+                        "back-ring-progress",
+                    ).style.background =
+                        "conic-gradient(rgba(80,160,255,0.7) 0%, transparent 0%)";
+                }
+            }
+            document
+                .getElementById("back-btn")
+                .addEventListener("click", triggerReturn);
+
+            // Land button dwell (same pattern as back button)
+            let landDwell = 0;
+            let landDwellPlanet = null;
+            const LAND_DWELL_THRESHOLD = 1400; // ms
+            function updateLandDwell(dt) {
+                if (state !== S.SURFACE || !landDwellPlanet) return;
+                const landBtn = document.getElementById("land-btn");
+                if (!landBtn || landBtn.classList.contains("disabled")) return;
+                const cx = handX > -100 ? handX : mouseX;
+                const cy = handX > -100 ? handY : mouseY;
+                const rect = landBtn.getBoundingClientRect();
+                const inX = cx >= rect.left && cx <= rect.right;
+                const inY = cy >= rect.top && cy <= rect.bottom;
+                const dwellBar = document.getElementById("land-dwell-bar");
+                if (inX && inY) {
+                    landDwell += dt;
+                    const pct = Math.min(landDwell / LAND_DWELL_THRESHOLD, 1);
+                    if (dwellBar) dwellBar.style.width = (pct * 100) + "%";
+                    landBtn.classList.add("dwelling");
+                    if (landDwell >= LAND_DWELL_THRESHOLD) {
+                        landDwell = 0;
+                        if (dwellBar) dwellBar.style.width = "0%";
+                        landBtn.classList.remove("dwelling");
+                        launchPlanetGame(landDwellPlanet);
+                    }
+                } else {
+                    landDwell = 0;
+                    if (dwellBar) dwellBar.style.width = "0%";
+                    landBtn.classList.remove("dwelling");
+                }
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  TRANSITIONS
+            // ════════════════════════════════════════════════════════
+            function triggerTransition(pl) {
+                if (state !== S.OVERVIEW) return;
+                selectedPlanet = pl;
+                state = S.TRANSITIONING;
+                transProgress = 0;
+                setStatus("🚀 Approche de " + pl.name + "…");
+            }
+
+            function triggerReturn() {
+                if (state !== S.SURFACE) return;
+                state = S.RETURNING;
+                transProgress = 0;
+                landDwell = 0;
+                landDwellPlanet = null;
+                document
+                    .getElementById("surface-hud")
+                    .classList.remove("visible");
+                document.getElementById("back-btn").classList.remove("visible");
+                setStatus("↩ Retour au système solaire…");
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  CAMERA HELPERS
+            // ════════════════════════════════════════════════════════
+            function getOverviewCamPos() {
+                const cx =
+                    orbitDist * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+                const cy = orbitDist * Math.cos(orbitPhi);
+                const cz =
+                    orbitDist * Math.sin(orbitPhi) * Math.sin(orbitTheta);
+                return new THREE.Vector3(cx, cy, cz);
+            }
+
+            function getSurfaceCamPos(pl) {
+                const wp = new THREE.Vector3();
+                pl.group.getWorldPosition(wp);
+                // Camera hovers above and slightly to the side
+                const offset = new THREE.Vector3(
+                    pl.radius * 1.8,
+                    pl.radius * 1.2,
+                    pl.radius * 2.5,
+                );
+                return wp.clone().add(offset);
+            }
+
+            // easing
+            function easeInOut(t) {
+                return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            }
+            function easeIn(t) {
+                return t * t * t;
+            }
+            function easeOut(t) {
+                return 1 - Math.pow(1 - t, 3);
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  CURSOR DRAW
+            // ════════════════════════════════════════════════════════
+            function drawCursor(dt) {
+                ctx2d.clearRect(0, 0, cursorCvs.width, cursorCvs.height);
+                if (state === S.TRANSITIONING || state === S.RETURNING) return;
+
+                const cx = handX > -100 ? handX : mouseX;
+                const cy = handX > -100 ? handY : mouseY;
+                if (cx < 0 || cx > window.innerWidth) return;
+
+                const isHovering = dwellPlanet !== null;
+                const dwellPct = isHovering
+                    ? Math.min(dwellTimer / DWELL_THRESHOLD, 1)
+                    : 0;
+
+                ctx2d.save();
+
+                // Outer ring (dwell progress)
+                if (isHovering && dwellPct > 0) {
+                    ctx2d.beginPath();
+                    ctx2d.arc(
+                        cx,
+                        cy,
+                        22,
+                        -Math.PI / 2,
+                        -Math.PI / 2 + dwellPct * Math.PI * 2,
+                    );
+                    ctx2d.strokeStyle = `rgba(100,200,255,${0.4 + dwellPct * 0.6})`;
+                    ctx2d.lineWidth = 2;
+                    ctx2d.stroke();
+                }
+
+                // Main cursor dot
+                const r = isHovering ? 7 : 5;
+                ctx2d.beginPath();
+                ctx2d.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx2d.fillStyle = isHovering
+                    ? "rgba(100,200,255,0.9)"
+                    : "rgba(80,160,255,0.7)";
+                ctx2d.fill();
+
+                // Crosshair lines
+                const len = isHovering ? 18 : 12;
+                ctx2d.strokeStyle = isHovering
+                    ? "rgba(100,200,255,0.5)"
+                    : "rgba(80,160,255,0.35)";
+                ctx2d.lineWidth = 1;
+                [
+                    [cx - len, cy, cx - r - 2, cy],
+                    [cx + r + 2, cy, cx + len, cy],
+                    [cx, cy - len, cx, cy - r - 2],
+                    [cx, cy + r + 2, cx, cy + len],
+                ].forEach(([x1, y1, x2, y2]) => {
+                    ctx2d.beginPath();
+                    ctx2d.moveTo(x1, y1);
+                    ctx2d.lineTo(x2, y2);
+                    ctx2d.stroke();
+                });
+
+                // Dwell flash
+                if (dwellPct >= 0.99) {
+                    ctx2d.beginPath();
+                    ctx2d.arc(cx, cy, 28, 0, Math.PI * 2);
+                    ctx2d.fillStyle = "rgba(100,200,255,0.3)";
+                    ctx2d.fill();
+                }
+
+                ctx2d.restore();
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  PLANET HOVER LABEL
+            // ════════════════════════════════════════════════════════
+            const labelEl = document.getElementById("planet-label");
+            function updateLabel() {
+                if (state !== S.OVERVIEW) {
+                    labelEl.style.opacity = "0";
+                    return;
+                }
+                if (dwellPlanet) {
+                    labelEl.style.opacity = "1";
+                    labelEl.style.left = dwellPlanet.screenX + "px";
+                    labelEl.style.top =
+                        dwellPlanet.screenY - dwellPlanet.screenR - 26 + "px";
+                    document.getElementById("pl-name-text").textContent =
+                        dwellPlanet.name.toUpperCase();
+                    document.getElementById("pl-desc-text").textContent =
+                        dwellPlanet.desc;
+                    // Show dwell progress in hint
+                    const pct = Math.round((dwellTimer / DWELL_THRESHOLD) * 100);
+                    document.getElementById("pl-hint-text").textContent =
+                        pct > 5 ? `Atterrissage ${pct}%` : "Maintenez pour atterrir";
+                } else {
+                    labelEl.style.opacity = "0";
+                }
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  SURFACE HUD
+            // ════════════════════════════════════════════════════════
+            function showSurfaceHUD(pl) {
+                // Set planet accent color CSS variable
+                const glowCol = new THREE.Color(pl.glowColor);
+                const accent = `rgba(${Math.round(glowCol.r*255)},${Math.round(glowCol.g*255)},${Math.round(glowCol.b*255)},0.7)`;
+                document.getElementById("surface-card").style.setProperty('--planet-accent', accent);
+
+                document.getElementById("surface-card-name").textContent = pl.name;
+                document.getElementById("surface-card-biome").textContent = pl.biome;
+                document.getElementById("surface-card-desc").textContent = pl.surfaceDesc;
+
+                // Build stat rows
+                const statsEl = document.getElementById("surface-card-stats");
+                const statData = [
+                    { label: "LUNES", val: pl.moons, bar: pl.moons / 5 },
+                    ...pl.moreStats.map(s => {
+                        const parts = s.split(': ');
+                        return { label: parts[0], val: parts[1] || s, bar: null };
+                    })
+                ];
+                statsEl.innerHTML = statData.map(s => {
+                    let html = `<div class="sc-stat-row"><span class="sc-stat-label">${s.label}</span><span class="sc-stat-val">${s.val}</span></div>`;
+                    if (s.bar !== null) {
+                        html += `<div class="sc-stat-bar"><div class="sc-stat-bar-fill" style="width:${Math.round(s.bar * 100)}%"></div></div>`;
+                    }
+                    return html;
+                }).join('');
+
+                // Configure land button (dwell-based, no click)
+                const landBtn = document.getElementById("land-btn");
+                const dwellBar = document.getElementById("land-dwell-bar");
+                if (dwellBar) dwellBar.style.width = "0%";
+                landBtn.classList.remove("dwelling");
+                if (PLANET_URLS[pl.name]) {
+                    landBtn.classList.remove("disabled");
+                    landDwellPlanet = pl;
+                } else {
+                    landBtn.classList.add("disabled");
+                    landDwellPlanet = null;
+                }
+
+                // Legacy elements
+                document.getElementById("surface-name").textContent = pl.name;
+                document.getElementById("surface-desc").textContent = pl.surfaceDesc;
+                document.getElementById("surface-stats").innerHTML = '';
+
+                document.getElementById("surface-hud").classList.add("visible");
+                document.getElementById("back-btn").classList.add("visible");
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  PLANET GAME SYSTEM — URL-based loading
+            // ════════════════════════════════════════════════════════
+            const PLANET_URLS = {
+                "Gambling":   "../planets/gambling/index.html",
+                "Musique":    "../planets/musique/index.html",
+                "Nourriture": "../planets/nourriture/index.html",
+                "Tron":       "../planets/tron/index.html",
+                "Danse":      "../planets/danse/index.html",
+                "Sable":      "../planets/sable/index.html",
+                "Manga":      "../planets/manga/index.html",
+            };
+
+            function launchPlanetGame(pl) {
+                const overlay = document.getElementById("planet-game-overlay");
+                const container = document.getElementById("planet-game-container");
+                const title = document.getElementById("game-overlay-title");
+
+                title.textContent = "PLANÈTE " + pl.name.toUpperCase();
+                overlay.classList.add("active");
+
+                // Libérer la caméra du cockpit pour que la planète puisse y accéder
+                stopHand();
+
+                const url = PLANET_URLS[pl.name];
+                if (!url) return;
+                container.innerHTML = `<iframe id="game-iframe" src="${url}" allow="camera;microphone;autoplay;fullscreen" allowfullscreen></iframe>`;
+            }
+
+            function closePlanetGame() {
+                const overlay = document.getElementById("planet-game-overlay");
+                const container = document.getElementById("planet-game-container");
+                container.innerHTML = "";
+                overlay.classList.remove("active");
+
+                // Relancer la caméra du cockpit après fermeture de la planète
+                initHand();
+            }
+            window.closePlanetGame = closePlanetGame;
+
+            document.getElementById("game-back-btn").addEventListener("click", closePlanetGame);
+
+            // ════════════════════════════════════════════════════════
+            //  FADE OVERLAY
+            // ════════════════════════════════════════════════════════
+            const fadeEl = document.getElementById("fade");
+            function setFade(on) {
+                if (on) fadeEl.classList.add("black");
+                else fadeEl.classList.remove("black");
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  UTILITIES
+            // ════════════════════════════════════════════════════════
+            function setStatus(msg) {
+                document.getElementById("status-line").textContent = msg;
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  ANIMATION LOOP
+            // ════════════════════════════════════════════════════════
+            let lastTime = performance.now();
+            let totalTime = 0;
+
+            function animate() {
+                requestAnimationFrame(animate);
+                const now = performance.now();
+                const dt = Math.min(now - lastTime, 50);
+                lastTime = now;
+                totalTime += dt;
+                const t = totalTime * 0.001;
+
+                // ── Process hand ──────────────────────────────
+                processHand();
+
+                // ── Sun shimmer ───────────────────────────────
+                sun.userData.shimmer &&
+                    (sun.userData.shimmer.rotation.y = t * 0.3);
+                sun.rotation.y = t * 0.08;
+
+                // ── Planet orbits ─────────────────────────────
+                planets.forEach((pl) => {
+                    pl.angle += pl.speed * (dt / 16);
+                    // Position on orbit
+                    pl.group.position.set(
+                        Math.cos(pl.angle) * pl.orbitR,
+                        0,
+                        Math.sin(pl.angle) * pl.orbitR,
+                    );
+                    pl.group.rotation.y += 0.004;
+
+                    // Moon orbits
+                    pl.moonObjs.forEach((moon) => {
+                        moon.userData.angle += moon.userData.speed;
+                        const ma = moon.userData.angle;
+                        const mr = moon.userData.orbitR;
+                        moon.position.set(
+                            Math.cos(ma) * mr,
+                            Math.sin(ma * 0.5) * mr * 0.15 +
+                                Math.sin(moon.userData.tiltX) * mr * 0.1,
+                            Math.sin(ma) * mr,
+                        );
+                    });
+
+                    // Screen position for hit detection
+                    if (state === S.OVERVIEW) updateScreenPos(pl);
+                });
+
+                // ── Camera ────────────────────────────────────
+                if (state === S.OVERVIEW) {
+                    const targetPos = getOverviewCamPos();
+                    camera.position.lerp(targetPos, 0.12);
+                    camera.lookAt(0, 0, 0);
+                    updateDwell(dt);
+                } else if (state === S.TRANSITIONING) {
+                    transProgress += dt / 2200;
+                    if (transProgress >= 1) transProgress = 1;
+
+                    const worldPos = new THREE.Vector3();
+                    selectedPlanet.group.getWorldPosition(worldPos);
+
+                    // Fade in at 45%, out at 55%
+                    if (transProgress > 0.4 && transProgress < 0.6) {
+                        setFade(true);
+                    } else if (transProgress >= 0.6) {
+                        setFade(false);
+                    }
+
+                    const ep = easeInOut(Math.min(transProgress * 1.8, 1));
+                    const startPos = getOverviewCamPos();
+                    const endPos = getSurfaceCamPos(selectedPlanet);
+
+                    camera.position.lerpVectors(startPos, endPos, ep);
+                    camera.lookAt(worldPos);
+
+                    if (transProgress >= 1) {
+                        state = S.SURFACE;
+                        surfaceTime = 0;
+                        setStatus("⬡ Bienvenue sur " + selectedPlanet.name);
+                        showSurfaceHUD(selectedPlanet);
+                        document.getElementById("instructions").style.display =
+                            "none";
+                    }
+                } else if (state === S.SURFACE) {
+                    surfaceTime += dt;
+                    const worldPos = new THREE.Vector3();
+                    selectedPlanet.group.getWorldPosition(worldPos);
+
+                    // Slow orbit around planet
+                    const orb = surfaceTime * 0.00028;
+                    const sr = selectedPlanet.radius * 3.2;
+                    const camOff = new THREE.Vector3(
+                        Math.cos(orb) * sr,
+                        selectedPlanet.radius * 1.1,
+                        Math.sin(orb) * sr,
+                    );
+                    const targetCamPos = worldPos.clone().add(camOff);
+                    camera.position.lerp(targetCamPos, 0.025);
+                    camera.lookAt(worldPos);
+                    updateBackDwell(dt);
+                    updateLandDwell(dt);
+                } else if (state === S.RETURNING) {
+                    transProgress += dt / 1800;
+                    if (transProgress >= 1) transProgress = 1;
+
+                    if (transProgress < 0.3) setFade(true);
+                    else setFade(false);
+
+                    if (transProgress >= 1) {
+                        state = S.OVERVIEW;
+                        selectedPlanet = null;
+                        setStatus("✦ Système solaire · Pointez une planète");
+                        document.getElementById("instructions").style.display =
+                            "";
+                    }
+                }
+
+                // ── Cursor & label ────────────────────────────
+                drawCursor(dt);
+                updateLabel();
+
+                // ── Render ────────────────────────────────────
+                renderer.render(scene, camera);
+            }
+
+            // ════════════════════════════════════════════════════════
+            //  RESIZE
+            // ════════════════════════════════════════════════════════
+            window.addEventListener("resize", () => {
+                const w = window.innerWidth,
+                    h = window.innerHeight;
+                renderer.setSize(w, h);
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                cursorCvs.width = w;
+                cursorCvs.height = h;
+            });
+
+            // ════════════════════════════════════════════════════════
+            //  INIT
+            // ════════════════════════════════════════════════════════
+            initHand();
+            animate();
+
+            setTimeout(() => {
+                const loading = document.getElementById("loading");
+                loading.style.opacity = "0";
+                setTimeout(() => (loading.style.display = "none"), 900);
+                setStatus("✦ Pointez votre index vers une planète");
+            }, 1400);
+            // ════════════════════════════════════════════════════════
+            //  COCKPIT JAVASCRIPT
+            // ════════════════════════════════════════════════════════
+
+            // ── Mission clock ────────────────────────────────────
+            (function () {
+                const t0 = Date.now();
+                function tick() {
+                    const s = Math.floor((Date.now() - t0) / 1000);
+                    const h = Math.floor(s / 3600);
+                    const m = Math.floor((s % 3600) / 60);
+                    const sec = s % 60;
+                    const p = v => String(v).padStart(2, '0');
+                    const el = document.getElementById('ck-clock');
+                    if (el) el.textContent = `T+${String(h).padStart(3,'0')}:${p(m)}:${p(sec)}`;
+                    setTimeout(tick, 1000);
+                }
+                tick();
+            })();
+
+            // ── Live readouts ────────────────────────────────────
+            (function () {
+                let az = 142.8, dist = 280, distDir = -1;
+                function upd() {
+                    az = (az + 0.04) % 360;
+                    const spd = (0.65 + Math.sin(Date.now() * 0.0003) * 0.12).toFixed(2);
+                    const temp = Math.round(3420 + Math.sin(Date.now() * 0.0007) * 52);
+
+                    const el = id => document.getElementById(id);
+                    if (el('ck-coord-val')) el('ck-coord-val').textContent = `α ${az.toFixed(1)}°`;
+                    if (el('ck-speed-val')) el('ck-speed-val').textContent = `${spd} AU/h`;
+                    if (el('ck-temp-val')) el('ck-temp-val').textContent = `${temp.toLocaleString('fr')} °K`;
+
+                    dist += distDir * 0.18;
+                    if (dist < 80 || dist > 490) distDir *= -1;
+
+                    setTimeout(upd, 80);
+                }
+                upd();
+            })();
+
+            // ── Fuel gauge ───────────────────────────────────────
+            (function () {
+                let fuel = 68;
+                function drain() {
+                    fuel = Math.max(0, fuel - 0.004);
+                    const pct = fuel.toFixed(1);
+                    const fill = document.getElementById('ck-fuel-fill');
+                    const lbl  = document.getElementById('ck-fuel-pct');
+                    if (fill) fill.style.width = pct + '%';
+                    if (lbl)  lbl.textContent = Math.round(fuel) + '%';
+                    setTimeout(drain, 600);
+                }
+                drain();
+            })();
+
+            // ── Throttle levers (manivelles) ─────────────────────
+            (function () {
+                const levers = [
+                    { handle: 'lev-handle-0', track: 'lev-track-0', pct: 'lev-pct-0', val: 72, swayOff: 0 },
+                    { handle: 'lev-handle-1', track: 'lev-track-1', pct: 'lev-pct-1', val: 45, swayOff: 1.2 },
+                    { handle: 'lev-handle-2', track: 'lev-track-2', pct: 'lev-pct-2', val: 18, swayOff: 2.5 },
+                ];
+
+                levers.forEach(lev => {
+                    const handle = document.getElementById(lev.handle);
+                    const track  = document.getElementById(lev.track);
+                    const pctEl  = document.getElementById(lev.pct);
+                    if (!handle || !track) return;
+
+                    let dragging = false, startY = 0, startVal = lev.val;
+
+                    function setVal(v) {
+                        lev.val = Math.max(0, Math.min(100, v));
+                        const tH = track.offsetHeight;
+                        const hH = handle.offsetHeight;
+                        handle.style.top = ((100 - lev.val) / 100 * (tH - hH)) + 'px';
+                        handle.style.left = '50%';
+                        handle.style.transform = 'translateX(-50%)';
+                        if (pctEl) pctEl.textContent = Math.round(lev.val) + '%';
+                    }
+                    // init after layout
+                    requestAnimationFrame(() => setVal(lev.val));
+
+                    handle.addEventListener('mousedown', e => {
+                        dragging = true; startY = e.clientY; startVal = lev.val;
+                        handle.classList.add('active');
+                        e.preventDefault(); e.stopPropagation();
+                    });
+                    window.addEventListener('mousemove', e => {
+                        if (!dragging) return;
+                        const dy = e.clientY - startY;
+                        setVal(startVal - dy / track.offsetHeight * 100);
+                    });
+                    window.addEventListener('mouseup', () => {
+                        if (dragging) { dragging = false; handle.classList.remove('active'); }
+                    });
+
+                    // Touch
+                    handle.addEventListener('touchstart', e => {
+                        dragging = true; startY = e.touches[0].clientY; startVal = lev.val;
+                        e.stopPropagation();
+                    }, { passive: true });
+                    window.addEventListener('touchmove', e => {
+                        if (!dragging) return;
+                        const dy = e.touches[0].clientY - startY;
+                        setVal(startVal - dy / track.offsetHeight * 100);
+                    }, { passive: true });
+                    window.addEventListener('touchend', () => { dragging = false; });
+
+                    // Ambient sway (vibration effect)
+                    let swayT = lev.swayOff;
+                    (function sway() {
+                        swayT += 0.015;
+                        if (!dragging) {
+                            const tH = track.offsetHeight;
+                            const hH = handle.offsetHeight;
+                            const nudge = Math.sin(swayT * 0.8) * 0.35;
+                            const topPx = ((100 - (lev.val + nudge)) / 100 * (tH - hH));
+                            handle.style.top = topPx + 'px';
+                        }
+                        requestAnimationFrame(sway);
+                    })();
+                });
+            })();
+
+            // ── Toggle switches ──────────────────────────────────
+            document.querySelectorAll('.ck-sw').forEach(sw => {
+                sw.addEventListener('click', () => sw.classList.toggle('on'));
+            });
+
+            // ── Console buttons ──────────────────────────────────
+            document.querySelectorAll('.ck-btn').forEach(btn => {
+                btn.addEventListener('click', () => btn.classList.toggle('on'));
+            });
+
+            // ── Canvas gauges ────────────────────────────────────
+            (function () {
+                function makeGauge(id, getVal, color, min, max) {
+                    const cvs = document.getElementById(id);
+                    if (!cvs) return;
+                    const ctx = cvs.getContext('2d');
+                    const W = cvs.width, H = cvs.height;
+                    const cx = W / 2, cy = H / 2;
+                    const R = Math.min(W, H) / 2 - 4;
+                    const SA = Math.PI * 0.75;
+                    const EA = Math.PI * 2.25;
+
+                    function draw() {
+                        ctx.clearRect(0, 0, W, H);
+                        const raw = getVal();
+                        const pct = (raw - min) / (max - min);
+                        const arcEnd = SA + pct * (EA - SA);
+
+                        // Background arc
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, R - 2, SA, EA);
+                        ctx.strokeStyle = 'rgba(80,160,255,0.07)';
+                        ctx.lineWidth = 5;
+                        ctx.stroke();
+
+                        // Value arc
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, R - 2, SA, arcEnd);
+                        ctx.strokeStyle = color;
+                        ctx.lineWidth = 4;
+                        ctx.shadowBlur = 8;
+                        ctx.shadowColor = color;
+                        ctx.stroke();
+                        ctx.shadowBlur = 0;
+
+                        // Tick marks
+                        for (let i = 0; i <= 10; i++) {
+                            const a = SA + (i / 10) * (EA - SA);
+                            const inner = i % 5 === 0 ? R - 11 : R - 7;
+                            ctx.beginPath();
+                            ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+                            ctx.lineTo(cx + Math.cos(a) * (R - 2), cy + Math.sin(a) * (R - 2));
+                            ctx.strokeStyle = i % 5 === 0 ? 'rgba(80,160,255,0.38)' : 'rgba(80,160,255,0.12)';
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+                        }
+
+                        // Needle
+                        const na = SA + pct * (EA - SA);
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy);
+                        ctx.lineTo(cx + Math.cos(na) * (R - 9), cy + Math.sin(na) * (R - 9));
+                        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+                        ctx.lineWidth = 1.5;
+                        ctx.shadowBlur = 4;
+                        ctx.shadowColor = '#fff';
+                        ctx.stroke();
+                        ctx.shadowBlur = 0;
+
+                        // Center dot
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+                        ctx.fillStyle = color;
+                        ctx.shadowBlur = 6;
+                        ctx.shadowColor = color;
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+
+                        // Value text
+                        ctx.fillStyle = 'rgba(120,200,255,0.72)';
+                        ctx.font = `bold ${Math.round(W * 0.16)}px "Share Tech Mono"`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(Math.round(raw), cx, cy + R * 0.38);
+
+                        requestAnimationFrame(draw);
+                    }
+                    draw();
+                }
+
+                let az = 142.8;
+                makeGauge('g-az', () => { az = (az + 0.025) % 360; return az; },
+                    'rgba(80,160,255,0.85)', 0, 360);
+
+                let dist2 = 280, d2dir = -1;
+                makeGauge('g-dist', () => {
+                    dist2 += d2dir * 0.18;
+                    if (dist2 < 80 || dist2 > 490) d2dir *= -1;
+                    return dist2;
+                }, 'rgba(40,220,150,0.85)', 0, 500);
+            })();
+
+        </script>
+    </body>
+</html>

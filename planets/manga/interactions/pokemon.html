@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Pokémon — Capture</title>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; cursor:none; }
+  body { background:#7ec0ee; overflow:hidden; height:100vh; font-family:'Inter',sans-serif; color:#fff; }
+  #cv { position:absolute; inset:0; display:block; }
+  #hud { position:fixed; top:0; left:0; right:0; padding:26px 40px; display:flex; justify-content:space-between; z-index:5; pointer-events:none; }
+  #title { font-family:'Bangers',sans-serif; font-size:34px; letter-spacing:4px; color:#fff; text-shadow:0 0 4px #2a6abf, 3px 3px 0 #2a6abf; }
+  #title small { display:block; font-family:'Inter'; font-weight:400; font-size:12px; color:#eef; letter-spacing:2px; margin-top:4px; text-shadow:none; }
+  #info { text-align:right; font-family:'Bangers',sans-serif; font-size:20px; letter-spacing:2px; color:#fff; text-shadow:2px 2px 0 #2a6abf; }
+  #finish-btn { position:fixed; bottom:40px; left:50%; transform:translateX(-50%); background:#ffcb05; color:#2a4a8a; border:3px solid #2a4a8a; padding:14px 40px; font-family:'Bangers',sans-serif; letter-spacing:3px; font-size:22px; cursor:none; z-index:20; display:none; clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px); box-shadow:0 6px 0 #1a2a5a; }
+  #finish-btn.show { display:block; }
+  #msg { position:fixed; top:42%; left:50%; transform:translate(-50%,-50%); font-family:'Bangers',sans-serif; font-size:72px; letter-spacing:4px; text-align:center; opacity:0; transition:.2s; z-index:6; pointer-events:none; text-shadow:3px 3px 0 #2a4a8a; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud">
+  <div id="title">CAPTURE !<small>Vise le Pokémon et clique quand l'anneau est au plus petit</small></div>
+  <div id="info">Pokéballs : <span id="tries">∞</span></div>
+</div>
+<div id="msg"></div>
+<button id="finish-btn">CONTINUER ✦</button>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H;
+function resize(){ W = cv.width = innerWidth; H = cv.height = innerHeight; }
+addEventListener('resize', resize); resize();
+
+let mouse = { x: innerWidth/2, y: innerHeight/2 };
+addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+addEventListener('mousedown', () => { if (state === 'aim') throwBall(); });
+
+let frame = 0;
+let state = 'aim';        // aim → throw → wobble → caught / breakfree
+let attempts = 0, caught = false;
+
+// Wild pokemon (original cute creature)
+let mon = { x: W*0.5, y: H*0.45, hopT: 0, nextHop: 0, vy: 0, scared: 0, facing: 1 };
+function repositionMon() {
+  mon.targetX = W*(0.25 + Math.random()*0.5);
+  mon.targetY = H*(0.35 + Math.random()*0.25);
+  mon.nextHop = frame + 90 + Math.random()*90;
+}
+repositionMon(); mon.x = mon.targetX; mon.y = mon.targetY;
+
+let ringRadius = 150, ringDir = -1;
+const SWEET = 46, MON_R = 42;
+
+let ball = null;     // {x,y,t, fromX,fromY, toX,toY, quality}
+let wobble = { t: 0, count: 0, success: false };
+
+// ─── Audio ───
+let actx = null;
+function tone(f,type,d,v){ try{ if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)(); const o=actx.createOscillator(),g=actx.createGain(); o.type=type;o.frequency.value=f; g.gain.setValueAtTime(v,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+d);}catch(e){} }
+function sfxThrow(){ tone(300,'sine',0.15,0.12); setTimeout(()=>tone(500,'sine',0.1,0.1),60); }
+function sfxClick(){ tone(180,'square',0.06,0.1); }
+function sfxCatch(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,'sine',0.25,0.14),i*120)); }
+function sfxBreak(){ tone(400,'sawtooth',0.2,0.12); setTimeout(()=>tone(200,'sawtooth',0.3,0.12),120); }
+
+function flash(text,color){ const m=document.getElementById('msg'); m.textContent=text; m.style.color=color; m.style.opacity='1'; setTimeout(()=>m.style.opacity='0',1100); }
+
+function throwBall() {
+  attempts++;
+  const dist = Math.hypot(mouse.x - mon.x, mouse.y - mon.y);
+  const aimScore = Math.max(0, 1 - dist / (MON_R*4));        // visée plus tolérante
+  const timingScore = Math.max(0, 1 - Math.abs(ringRadius - SWEET) / 170); // timing plus tolérant
+  const quality = aimScore*0.55 + timingScore*0.45;
+  sfxThrow();
+  ball = { t: 0, fromX: W*0.5, fromY: H + 30, toX: mon.x, toY: mon.y, quality };
+  state = 'throw';
+}
+
+function update() {
+  frame++;
+  // mon hop
+  if (state === 'aim') {
+    if (frame > mon.nextHop) repositionMon();
+    mon.x += (mon.targetX - mon.x)*0.08; mon.y += (mon.targetY - mon.y)*0.08;
+    mon.facing = mon.targetX >= mon.x ? 1 : -1;
+    mon.hopT += 0.15;
+    ringRadius += ringDir * 1.0;   // anneau plus lent = plus facile
+    if (ringRadius < 34) { ringRadius = 34; ringDir = 1; }
+    if (ringRadius > 150) { ringRadius = 150; ringDir = -1; }
+  }
+  if (state === 'throw' && ball) {
+    ball.t += 0.05;
+    if (ball.t >= 1) {
+      // arrived
+      state = 'wobble'; wobble = { t: 0, count: 0, success: ball.quality > 0.5 };
+      mon.captured = true;
+    }
+  }
+  if (state === 'wobble') {
+    wobble.t += 0.02;
+    const shakeIdx = Math.floor(wobble.t / 0.5);
+    if (shakeIdx > wobble.count && wobble.count < 3) { wobble.count = shakeIdx; sfxClick(); }
+    if (wobble.t >= 1.6) {
+      if (wobble.success) {
+        state = 'caught'; caught = true; sfxCatch(); flash('GOTCHA !', '#ffcb05');
+        setTimeout(()=>document.getElementById('finish-btn').classList.add('show'), 900);
+      } else {
+        state = 'aim'; mon.captured = false; sfxBreak(); flash('Évadé !', '#ff5b5b');
+        mon.scared = 1; repositionMon(); ball = null;
+      }
+    }
+  }
+}
+
+// ─── Draw ───
+function drawBackground() {
+  // sky
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#7ec0ee'); g.addColorStop(0.6,'#aee0ff'); g.addColorStop(1,'#bfe89a');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // clouds
+  ctx.fillStyle='rgba(255,255,255,0.85)';
+  for (let i=0;i<4;i++){ const x=(i*340 + frame*0.3)%(W+200)-100, y=60+i*30;
+    ctx.beginPath(); ctx.ellipse(x,y,50,24,0,0,Math.PI*2); ctx.ellipse(x+40,y+6,38,20,0,0,Math.PI*2); ctx.ellipse(x-36,y+8,34,18,0,0,Math.PI*2); ctx.fill(); }
+  // ground
+  ctx.fillStyle='#86c552'; ctx.fillRect(0,H*0.62,W,H*0.38);
+  ctx.fillStyle='#74b446'; ctx.fillRect(0,H*0.62,W,8);
+  // tall grass tufts (background)
+  for (let i=0;i<40;i++){ const x=(i*73)%W, y=H*0.62 + (i*37)%(H*0.34);
+    ctx.strokeStyle = (i%2)?'#5fa038':'#74b446'; ctx.lineWidth=4;
+    const sway=Math.sin(frame*0.04+i)*5;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.quadraticCurveTo(x+sway,y-20,x+sway*1.5,y-34); ctx.stroke();
+  }
+}
+
+function drawMon() {
+  if (mon.captured && state!=='aim') return; // hidden in ball
+  const hop = state==='aim' ? Math.abs(Math.sin(mon.hopT))*10 : 0;
+  const x = mon.x, y = mon.y - hop;
+  ctx.save(); ctx.translate(x,y);
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0, MON_R+6+hop, MON_R*0.8, 10, 0, 0, Math.PI*2); ctx.fill();
+  ctx.scale(mon.facing,1);
+  // body (round orange critter w/ flame-ish ears)
+  ctx.fillStyle='#ff9a3c'; ctx.strokeStyle='#10070a'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(0,0,MON_R,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  // belly
+  ctx.fillStyle='#ffd9a0'; ctx.beginPath(); ctx.ellipse(0,12,MON_R*0.55,MON_R*0.5,0,0,Math.PI*2); ctx.fill();
+  // ears
+  ctx.fillStyle='#ff9a3c';
+  ctx.beginPath(); ctx.moveTo(-26,-MON_R+6); ctx.lineTo(-40,-MON_R-26); ctx.lineTo(-8,-MON_R-4); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(26,-MON_R+6); ctx.lineTo(40,-MON_R-26); ctx.lineTo(8,-MON_R-4); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // cheeks
+  ctx.fillStyle='#ff5b5b'; ctx.beginPath(); ctx.arc(-22,8,7,0,Math.PI*2); ctx.arc(22,8,7,0,Math.PI*2); ctx.fill();
+  // eyes
+  ctx.fillStyle='#10070a'; ctx.beginPath(); ctx.ellipse(-14,-6,6,8,0,0,Math.PI*2); ctx.ellipse(14,-6,6,8,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(-12,-9,2.4,0,Math.PI*2); ctx.arc(16,-9,2.4,0,Math.PI*2); ctx.fill();
+  // mouth
+  ctx.strokeStyle='#10070a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,6,7,0.1,Math.PI-0.1); ctx.stroke();
+  ctx.restore();
+}
+
+function drawReticle() {
+  if (state !== 'aim') return;
+  // catch circle on the mon
+  ctx.save();
+  const overMon = Math.hypot(mouse.x-mon.x, mouse.y-mon.y) < MON_R*1.6;
+  ctx.strokeStyle = overMon ? '#ffcb05' : 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(mon.x, mon.y, SWEET, 0, Math.PI*2); ctx.stroke();
+  // shrinking ring
+  ctx.strokeStyle = Math.abs(ringRadius-SWEET) < 26 ? '#2dff7a' : '#ff5b5b';
+  ctx.lineWidth = 4; ctx.shadowColor=ctx.strokeStyle; ctx.shadowBlur=14;
+  ctx.beginPath(); ctx.arc(mon.x, mon.y, ringRadius, 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawBall() {
+  let bx, by;
+  if (state === 'throw' && ball) {
+    bx = ball.fromX + (ball.toX-ball.fromX)*ball.t;
+    by = ball.fromY + (ball.toY-ball.fromY)*ball.t - Math.sin(ball.t*Math.PI)*260;
+    drawPokeball(bx, by, 16, frame*0.4);
+  } else if (state === 'wobble' || state === 'caught') {
+    bx = mon.x; by = mon.y;
+    const wob = state==='wobble' ? Math.sin(wobble.t*18)*0.3*(1 - wobble.t/1.6) : 0;
+    drawPokeball(bx, by, 18, wob, true);
+    if (state==='wobble') { // sparkles
+      for (let i=0;i<3;i++){ if ((wobble.count) > i){} }
+    }
+  }
+}
+function drawPokeball(x,y,r,rot,onGround){
+  ctx.save(); ctx.translate(x,y);
+  if (onGround){ ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0,r+8,r,6,0,0,Math.PI*2); ctx.fill(); }
+  ctx.rotate(rot);
+  ctx.strokeStyle='#10070a'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(0,0,r,Math.PI,0); ctx.fillStyle='#ee3b3b'; ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI); ctx.fillStyle='#f5f5f5'; ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#10070a'; ctx.fillRect(-r,-2.5,r*2,5);
+  ctx.beginPath(); ctx.arc(0,0,r*0.34,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=3; ctx.stroke();
+  ctx.restore();
+}
+
+function drawCursor() {
+  ctx.save();
+  if (state === 'aim') {
+    // pokeball cursor ready to throw
+    drawPokeball(mouse.x, mouse.y, 14, 0);
+  } else {
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(mouse.x,mouse.y,6,0,Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function loop() {
+  update();
+  drawBackground();
+  drawMon();
+  drawReticle();
+  drawBall();
+  if (state==='caught'){ // capture sparkles
+    for (let i=0;i<5;i++){ const a=frame*0.1+i; ctx.fillStyle=`rgba(255,215,80,${0.6})`;
+      ctx.beginPath(); ctx.arc(mon.x+Math.cos(a)*40, mon.y+Math.sin(a)*40, 3, 0, Math.PI*2); ctx.fill(); }
+  }
+  document.getElementById('tries').textContent = caught ? '✓' : (attempts===0 ? '∞' : '∞');
+  drawCursor();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('finish-btn').onclick = () => { try { window.parent.postMessage({ type:'interaction-complete', id:'pokemon' }, '*'); } catch(e){} };
+loop();
+</script>
+</body>
+</html>
