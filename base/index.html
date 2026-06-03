@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Delivery</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #07080f; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+
+    <!-- Librairies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js"></script>
+    <!-- Importation de la dernière version de ml5.js -->
+    <script src="https://unpkg.com/ml5@1.3.1/dist/ml5.min.js"></script>
+
+    <!-- Ordre de chargement important : les dépendances d'abord -->
+    <script src="constants.js"></script>   <!-- SCENE, MODE, COULEURS -->
+    <script src="dialogues.js"></script>   <!-- Dialogue -->
+    <script src="config.js"></script>      <!-- Config (utilise SCENE, MODE) -->
+    <script src="screen.js"></script>      <!-- SCREEN, dessineEcranGauche/Centre/Droit -->
+    <script src="utils.js"></script>       <!-- melangerTableau, setTimer, lancerTransition... -->
+    <script src="ui.js"></script>          <!-- Bulle() -->
+    <script src="personnage.js"></script>  <!-- Visuel + animations du personnage joueur -->
+    <script src="interaction_vocale.js"></script>  <!-- VoixColis : geste + voix pour saisir les colis -->
+
+    <!-- Scènes -->
+    <script src="scene/scene_intro.js"></script>          <!-- class Intro -->
+    <script src="scene/scene_info_utilisation.js"></script> <!-- class InfoUtilisationJeu -->
+    <script src="scene/scene_entrepot.js"></script>       <!-- class JeuRechercheColis -->
+    <script src="scene/scene_vaisseau.js"></script>       <!-- class PreparationVaisseau -->
+    <script src="scene/scene_demarage_vaisseau.js"></script> <!-- class DemarageVaisseau -->
+    <script src="scene/scene_isometrique.js"></script>    <!-- class NiveauIsometrique -->
+
+    <!-- Boucle principale -->
+    <script src="planet.js"></script>      <!-- class Planet -->
+
+    <!-- Entrées (en dernier : utilise toutes les classes) -->
+    <script src="input.js"></script>       <!-- keyPressed, mouseClicked... -->
+
+    <!-- Point d'entrée p5 (tout en dernier) -->
+    <script src="sketch.js"></script>
+</head>
+<body></body>
+</html>

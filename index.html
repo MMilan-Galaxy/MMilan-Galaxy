@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Delivery</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #07080f; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+
+    <!-- Librairies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js"></script>
+    <script src="https://unpkg.com/ml5@1.3.1/dist/ml5.min.js"></script>
+
+    <!-- Base game scripts (order matters) -->
+    <script src="base/constants.js"></script>
+    <script src="base/dialogues.js"></script>
+    <script src="base/config.js"></script>
+    <script src="base/screen.js"></script>
+    <script src="base/utils.js"></script>
+    <script src="base/ui.js"></script>
+    <script src="base/personnage.js"></script>
+    <script src="base/interaction_vocale.js"></script>
+
+    <!-- Scenes -->
+    <script src="base/scene/scene_intro.js"></script>
+    <script src="base/scene/scene_info_utilisation.js"></script>
+    <script src="base/scene/scene_entrepot.js"></script>
+    <script src="base/scene/scene_vaisseau.js"></script>
+    <script src="base/scene/scene_demarage_vaisseau.js"></script>
+    <script src="base/scene/scene_isometrique.js"></script>
+
+    <!-- Main loop -->
+    <script src="base/planet.js"></script>
+    <script src="base/input.js"></script>
+    <script src="base/sketch.js"></script>
+    <script src="shared/debug-tp.js"></script>
+    <script src="shared/crystals.js"></script>
+    <script>
+      // Reset les cristaux a chaque lancement du jeu
+      if (window.SpaceCrystals) SpaceCrystals.reset();
+      // Nettoyer les anciens saves localStorage
+      try { localStorage.removeItem("space_delivery_crystals"); } catch(e) {}
+    </script>
+</head>
+<body></body>
+</html>
