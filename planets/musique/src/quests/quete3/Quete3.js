@@ -55,6 +55,15 @@ class Quete3 extends Quest {
     this.sparks = [];
     this._finishing = false;
     this._winTimeout = null;
+
+    // Guitar mode (strum the connected cables)
+    this.guitarMode = false;
+    this.guitarStrumCount = 0;
+    this._prevHandY = null;
+    this._guitarDone = false;
+    this.dwellProgress = 0;
+    this.DWELL_DURATION = 1500;
+    this.DS_ACCENT = "#F72585"; // Symphonia music accent
   }
 
   setup(p) {
@@ -67,24 +76,29 @@ class Quete3 extends Quest {
     this.smoothedCursorX = null;
     this.smoothedCursorY = null;
     this.isPinching = false;
+    this.guitarMode = false;
+    this.guitarStrumCount = 0;
+    this._prevHandY = null;
+    this._guitarDone = false;
+    this.dwellProgress = 0;
+    this._loopActive = false;
 
     this._buildWires(p);
 
     this.video = p.createCapture(p.VIDEO, () => {
+      if (!this.video) return; // quest cleaned up before callback fired
       this.video.size(320, 240);
       this.video.hide();
       try {
         this.handPose = ml5.handPose(() => {
-          if (this.video && this.handPose) {
-            this.handPose.detectStart(this.video, (results) => {
-              if (this.handPose) this.hands = results;
-            });
-          }
+          if (!this.video || !this.handPose || !this._loopActive) return;
+          this._detectionLoop();
         });
       } catch (e) {
         console.warn("[Q3] handPose init failed", e);
       }
     });
+    this._loopActive = true; // set before capture callback may fire
     this.video.hide();
 
     try {
@@ -157,6 +171,146 @@ class Quete3 extends Quest {
     };
   }
 
+  // ─── Audio ────────────────────────────────────────────────────────────────
+
+  _getAudioCtx() {
+    try {
+      if (typeof getAudioContext === "function") return getAudioContext();
+      if (window.p5 && p5.soundOut) return p5.soundOut.audiocontext;
+      return new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Karplus-Strong plucked string synthesis
+  _playGuitarPluck(freq) {
+    try {
+      const ctx = this._getAudioCtx();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      const sr = ctx.sampleRate;
+      const period = Math.round(sr / freq);
+      const len = Math.min(sr * 3, period * 180);
+      const buf = ctx.createBuffer(1, len, sr);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < period; i++) d[i] = Math.random() * 2 - 1;
+      for (let i = period; i < len; i++) {
+        d[i] = 0.996 * ((d[i - period] + d[i - period + 1]) * 0.5);
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.7, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(now);
+    } catch (e) {
+      console.warn("[Q3] guitar pluck failed", e);
+    }
+  }
+
+  _colorToFreq(color) {
+    const map = {
+      "#ff7ad1": 196.0,   // rose   → G3
+      "#cb6ce6": 246.94,  // violet → B3
+      "#29ffdf": 329.63,  // turquoise → E4
+      "#ffbd59": 146.83,  // orange → D3
+      "#fff854": 220.0,   // jaune  → A3
+    };
+    return map[color] || 220.0;
+  }
+
+  // ─── Guitar mode ──────────────────────────────────────────────────────────
+
+  _initGuitarMode(p) {
+    this.guitarMode = true;
+    this.dwellProgress = 0;
+
+    // Victory arpeggio on the connected cables
+    this.connections.forEach((conn, i) => {
+      setTimeout(
+        () => this._playGuitarPluck(this._colorToFreq(conn.left.color)),
+        i * 100,
+      );
+    });
+  }
+
+  _updateGuitar(p) {
+    if (!this.guitarMode || this._guitarDone) return;
+
+    // Decay all vibrations
+    for (const conn of this.connections) conn.vibration *= 0.94;
+
+    if (this.smoothedCursorY === null) {
+      this._prevHandY = null;
+      this.dwellProgress = Math.max(0, this.dwellProgress - p.deltaTime / 600);
+      return;
+    }
+
+    // ── Dwell button ──────────────────────────────────────────────────────
+    const btn = this._nextBtnPos(p);
+    const inBtn =
+      this.smoothedCursorX >= btn.x &&
+      this.smoothedCursorX <= btn.x + btn.w &&
+      this.smoothedCursorY >= btn.y &&
+      this.smoothedCursorY <= btn.y + btn.h;
+    if (inBtn) {
+      this.dwellProgress = Math.min(
+        1,
+        this.dwellProgress + p.deltaTime / this.DWELL_DURATION,
+      );
+      if (this.dwellProgress >= 1) {
+        this._guitarDone = true;
+        this.complete();
+        return;
+      }
+    } else {
+      this.dwellProgress = Math.max(0, this.dwellProgress - p.deltaTime / 600);
+    }
+
+    // ── Strum detection ───────────────────────────────────────────────────
+    const prevY =
+      this._prevHandY !== null ? this._prevHandY : this.smoothedCursorY;
+    const currY = this.smoothedCursorY;
+    const dy = Math.abs(currY - prevY);
+
+    for (const conn of this.connections) {
+      // Use the bezier midpoint Y (= average of left and right Y endpoints)
+      const midY = (conn.left.y + conn.right.y) / 2;
+      const crossed =
+        (prevY < midY && currY >= midY) || (prevY > midY && currY <= midY);
+      const fast = dy > 6;
+      const notRecent = p.frameCount - conn.lastStrumFrame > 12;
+
+      if (crossed && fast && notRecent) {
+        conn.vibration = 1.0;
+        conn.lastStrumFrame = p.frameCount;
+        conn.strummed = true;
+        this._playGuitarPluck(this._colorToFreq(conn.left.color));
+        this.guitarStrumCount++;
+      }
+    }
+
+    this._prevHandY = currY;
+  }
+
+  _nextBtnPos(p) {
+    const h = 52;
+    // Right strip outside the cable panel (panel ends at 88% width)
+    const x = p.width * 0.885;
+    const w = p.width - x - 14;
+    return {
+      x,
+      y: p.height * 0.5 - h / 2,
+      w: Math.max(w, 100),
+      h,
+    };
+  }
+
+  // ─── Update ───────────────────────────────────────────────────────────────
+
   update(p) {
     this._updateSparks(p);
 
@@ -164,6 +318,7 @@ class Quete3 extends Quest {
       if (this.isPinching && this.draggedWire) this._releaseDrag(p);
       this.isPinching = false;
       this.pinchRatio = 1;
+      if (this.guitarMode) this._prevHandY = null;
       return;
     }
 
@@ -195,6 +350,11 @@ class Quete3 extends Quest {
       this.isPinching = this.pinchRatio < 0.65;
     } else {
       this.isPinching = this.pinchRatio < 0.45;
+    }
+
+    if (this.guitarMode) {
+      this._updateGuitar(p);
+      return;
     }
 
     this._updateHover();
@@ -268,9 +428,12 @@ class Quete3 extends Quest {
         left: wire,
         right: rw,
         flowPhase: p.random(1000),
+        vibration: 0,
+        lastStrumFrame: -999,
+        strummed: false,
       });
       this._spawnSparks(p, rw.x, rw.y, rw.color);
-      this._playSuccessTone();
+      this._playGuitarPluck(this._colorToFreq(wire.color));
       this._updateHum();
 
       if (
@@ -279,7 +442,8 @@ class Quete3 extends Quest {
       ) {
         this._finishing = true;
         if (this._winTimeout) clearTimeout(this._winTimeout);
-        this._winTimeout = setTimeout(() => this.complete(), 1800);
+        this._winTimeout = null;
+        this._initGuitarMode(p);
       }
       return;
     }
@@ -317,30 +481,40 @@ class Quete3 extends Quest {
     if (ratio >= 1) {
       this.oscillator.amp(0, 0.8);
     } else {
-      this.oscillator.freq(220 + ratio * 220); // 220 Hz → 440 Hz au fil des connexions
-      this.oscillator.amp(0.055 - ratio * 0.04, 0.3); // léger, s'estompe progressivement
+      this.oscillator.freq(220 + ratio * 220);
+      this.oscillator.amp(0.055 - ratio * 0.04, 0.3);
     }
   }
 
-  _playSuccessTone() {
-    try {
-      const blip = new p5.Oscillator("sine");
-      blip.start();
-      blip.freq(660);
-      blip.amp(0.25, 0.02);
-      setTimeout(() => {
-        blip.freq(990);
-        setTimeout(() => {
-          blip.amp(0, 0.15);
-          setTimeout(() => {
-            try {
-              blip.stop();
-            } catch (e) {}
-          }, 250);
-        }, 90);
-      }, 80);
-    } catch (e) {}
+  // Manual detect() loop — avoids ml5 detectStart's uncontrollable internal loop
+  _detectionLoop() {
+    if (!this._loopActive || !this.handPose || !this.video) return;
+    const hp = this.handPose;
+    const vid = this.video;
+    hp.detect(vid).then((results) => {
+      if (!this._loopActive || this.handPose !== hp) return;
+      this.hands = results || [];
+      requestAnimationFrame(() => this._detectionLoop());
+    }).catch(() => {
+      // video removed or model disposed — stop loop silently
+    });
   }
+
+  // ─── Design System helpers (Canvas2D) ────────────────────────────────────
+
+  // Chamfered polygon path matching the DS clip-path style
+  _dsChampferPath(ctx, x, y, w, h, cut) {
+    ctx.beginPath();
+    ctx.moveTo(x + cut, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + h - cut);
+    ctx.lineTo(x + w - cut, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x, y + cut);
+    ctx.closePath();
+  }
+
+  // ─── Draw ─────────────────────────────────────────────────────────────────
 
   draw(p) {
     p.background(this.COLORS.noir);
@@ -362,6 +536,7 @@ class Quete3 extends Quest {
     if (this.draggedWire) this._drawDragWire(p);
     this._drawEndpoints(p);
     this._drawSparks(p);
+    if (this.guitarMode) this._drawNextButton(p);
     if (this.smoothedCursorX !== null) this._drawCursor(p);
     this._drawHUD(p);
     this._drawJaxxSpectator(p);
@@ -369,7 +544,6 @@ class Quete3 extends Quest {
 
   _drawGrid(p) {
     p.push();
-    p.stroke(this.COLORS.turquoise);
     p.strokeWeight(0.6);
     const spacing = 64;
     const fade = 0.35;
@@ -392,10 +566,11 @@ class Quete3 extends Quest {
   _drawPanel(p) {
     const r = this._panelRect(p);
     p.push();
+
+    // Cable area — keep existing visual (turquoise glow, cables live here)
     p.noStroke();
     p.fill(20, 20, 35, 220);
     p.rect(r.x, r.y, r.w, r.h, 18);
-
     const glow = 0.6 + 0.4 * Math.sin(p.frameCount * 0.05);
     p.noFill();
     p.stroke(41, 255, 223, 80 + 80 * glow);
@@ -404,26 +579,63 @@ class Quete3 extends Quest {
     p.stroke(this.COLORS.turquoise);
     p.strokeWeight(2);
     p.rect(r.x, r.y, r.w, r.h, 18);
-
-    p.noStroke();
-    p.fill(10, 10, 20);
-    p.rect(r.x - 1, r.y - 28, 280, 30, 6);
-    p.fill(this.COLORS.turquoise);
-    p.textAlign(p.LEFT, p.CENTER);
-    p.textSize(16);
-    p.text("TRON · O2 · CÂBLAGE", r.x + 14, r.y - 14);
-
-    p.fill(10, 10, 20);
-    p.rect(r.x + r.w - 130, r.y - 28, 130, 30, 6);
-    p.fill(this.COLORS.jaune);
-    p.textAlign(p.RIGHT, p.CENTER);
-    p.textSize(15);
-    p.text(
-      `${this.connections.length} / ${this.totalConnections}`,
-      r.x + r.w - 14,
-      r.y - 14,
-    );
     p.pop();
+
+    // ── DS context-header above panel ─────────────────────────────────────
+    const ctx = p.drawingContext;
+    const hh = 38;
+    const hy = r.y - hh - 6;
+
+    // Left header label (title)
+    const titleW = 260;
+    const titleX = r.x;
+    ctx.save();
+    ctx.fillStyle = "rgba(10, 10, 20, 0.92)";
+    ctx.fillRect(titleX, hy, titleW, hh);
+    // accent top strip (like .context-menu::before)
+    ctx.fillStyle = this.DS_ACCENT;
+    ctx.fillRect(titleX, hy, titleW, 4);
+    // title text
+    ctx.font = "700 12px 'Inter', sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillStyle = this.guitarMode ? this.DS_ACCENT : "#29ffdf";
+    ctx.fillText(
+      this.guitarMode ? "JOUE DE LA GUITARE !" : "TRON · O2 · CÂBLAGE",
+      titleX + 14,
+      hy + hh / 2 + 2,
+    );
+    ctx.restore();
+
+    // Right: connection count — DS badge style (chamfered)
+    const countW = 110;
+    const countX = r.x + r.w - countW;
+    const cut = 10;
+    const allDone = this.connections.length === this.totalConnections;
+    ctx.save();
+    this._dsChampferPath(ctx, countX, hy, countW, hh, cut);
+    ctx.fillStyle = "rgba(10, 10, 20, 0.92)";
+    ctx.fill();
+    // top accent
+    ctx.fillStyle = this.DS_ACCENT;
+    ctx.fillRect(countX, hy, countW, 4);
+    // border
+    this._dsChampferPath(ctx, countX, hy, countW, hh, cut);
+    ctx.strokeStyle = allDone ? this.DS_ACCENT : "rgba(255,255,255,0.15)";
+    ctx.lineWidth = allDone ? 2 : 1;
+    ctx.stroke();
+    // count text
+    ctx.font = "900 14px 'Inter', sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillStyle = allDone ? this.DS_ACCENT : "#fff854";
+    ctx.fillText(
+      `${this.connections.length} / ${this.totalConnections}`,
+      countX + countW / 2,
+      hy + hh / 2 + 2,
+    );
+    ctx.restore();
+
     p.noStroke();
   }
 
@@ -438,8 +650,51 @@ class Quete3 extends Quest {
         conn.left.color,
         true,
       );
+      // Vibration overlay when cable is strummed
+      if (conn.vibration > 0.02) {
+        this._drawWireVibration(p, conn);
+      }
       this._drawFlowDot(p, conn);
     }
+  }
+
+  _drawWireVibration(p, conn) {
+    const vib = conn.vibration;
+    const x1 = conn.left.x;
+    const y1 = conn.left.y;
+    const x2 = conn.right.x;
+    const y2 = conn.right.y;
+    const cp = Math.max(60, (x2 - x1) * 0.45);
+    const amp = vib * 14;
+    const col = p.color(conn.left.color);
+
+    p.push();
+    p.noFill();
+
+    // Outer glow
+    p.stroke(p.red(col), p.green(col), p.blue(col), 110 * vib);
+    p.strokeWeight(18);
+    p.beginShape();
+    for (let t = 0; t <= 1; t += 0.025) {
+      const bx = this._bezier(t, x1, x1 + cp, x2 - cp, x2);
+      const by = this._bezier(t, y1, y1, y2, y2);
+      p.vertex(bx, by + amp * Math.sin(t * Math.PI * 5 + p.frameCount * 0.3));
+    }
+    p.endShape();
+
+    // Bright vibrating core
+    p.stroke(conn.left.color);
+    p.strokeWeight(5);
+    p.beginShape();
+    for (let t = 0; t <= 1; t += 0.025) {
+      const bx = this._bezier(t, x1, x1 + cp, x2 - cp, x2);
+      const by = this._bezier(t, y1, y1, y2, y2);
+      p.vertex(bx, by + amp * Math.sin(t * Math.PI * 5 + p.frameCount * 0.3));
+    }
+    p.endShape();
+
+    p.pop();
+    p.noStroke();
   }
 
   _drawDragWire(p) {
@@ -612,47 +867,100 @@ class Quete3 extends Quest {
   }
 
   _drawHUD(p) {
-    p.push();
+    const ctx = p.drawingContext;
     const handDetected = this.hands && this.hands.length > 0;
-    p.textAlign(p.LEFT, p.TOP);
-    p.textSize(14);
-    p.fill(handDetected ? this.COLORS.turquoise : "#ff7ad1");
-    p.text(
-      handDetected ? "● MAIN DÉTECTÉE" : "○ aucune main détectée",
-      20,
-      p.height - 70,
-    );
+
+    // ── Bottom strip layout (below panel, above screen edge) ──────────────
+    // All UI lives here — cables field stays clear
+    const bh = 44;             // badge / toast height
+    const cut = 13;            // chamfer size
+    const stripY = p.height - bh - 14;
+
+    // ── LEFT : hand-detection badge ───────────────────────────────────────
+    const badgeW = 190;
+    const badgeX = 16;
+    const handColor = handDetected ? "#29ffdf" : "#ff7ad1";
+    const handLabel = handDetected ? "✓ MAIN DÉTECTÉE" : "✗ AUCUNE MAIN";
+
+    ctx.save();
+    this._dsChampferPath(ctx, badgeX, stripY, badgeW, bh, cut);
+    ctx.fillStyle = "rgba(10,10,20,0.90)";
+    ctx.fill();
+    // left accent strip
+    ctx.fillStyle = handColor;
+    ctx.fillRect(badgeX, stripY, 4, bh);
+    // border
+    this._dsChampferPath(ctx, badgeX, stripY, badgeW, bh, cut);
+    ctx.strokeStyle = handColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // label
+    ctx.font = "700 12px 'Inter', sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillStyle = handColor;
+    ctx.fillText(handLabel, badgeX + 16, stripY + bh / 2);
+    ctx.restore();
+
+    // Sub-label: pinch status (cable mode) or strum count (guitar mode)
     if (handDetected) {
-      if (this.isPinching) {
-        p.fill(this.COLORS.jaune);
+      let subLabel, subColor;
+      if (this.guitarMode) {
+        subLabel = `GRATTAGES : ${this.guitarStrumCount}`;
+        subColor = "#fff854";
       } else {
-        p.fill(255, 220);
+        subLabel = this.isPinching
+          ? "⚡ PINCE FERMÉE"
+          : `RATIO PINCE : ${this.pinchRatio.toFixed(2)}`;
+        subColor = this.isPinching ? "#fff854" : "rgba(140,140,158,0.85)";
       }
-      p.text(
-        this.isPinching
-          ? "✕ PINCE FERMÉE"
-          : `pince : ${this.pinchRatio.toFixed(2)} (ferme à 0.45)`,
-        20,
-        p.height - 50,
-      );
+      ctx.save();
+      ctx.font = "600 10px 'Inter', sans-serif";
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      ctx.fillStyle = subColor;
+      ctx.fillText(subLabel, badgeX + 12, stripY + bh + 5);
+      ctx.restore();
     }
 
-    p.textAlign(p.CENTER, p.BOTTOM);
-    if (this.connections.length < this.totalConnections) {
-      p.fill(this.COLORS.turquoise);
-      p.textSize(16);
-      p.text(
-        "Pince pouce + index sur un câble, relâche au-dessus du socket de la même couleur.",
-        p.width / 2,
-        p.height - 24,
-      );
-    } else {
-      const glow = 0.6 + 0.4 * Math.sin(p.frameCount * 0.15);
-      p.fill(255, 248, 84, 255 * glow);
-      p.textSize(36);
-      p.text("CIRCUIT RESTAURÉ", p.width / 2, p.height - 40);
+    // ── CENTER : instruction toast ─────────────────────────────────────────
+    let instruction = null;
+    if (this.guitarMode) {
+      instruction = "BOUGE TA MAIN DE HAUT EN BAS POUR GRATTER LES CÂBLES";
+    } else if (this.connections.length < this.totalConnections) {
+      instruction = "PINCE POUCE + INDEX · RELÂCHE SUR LE SOCKET DE MÊME COULEUR";
     }
-    p.pop();
+
+    if (instruction) {
+      const toastMargin = 12;
+      const toastX = badgeX + badgeW + toastMargin;
+      // Toast spans to the right strip edge (button is now on right side, not bottom)
+      const toastW = p.width * 0.88 - toastX - toastMargin;
+
+      if (toastW > 60) {
+        ctx.save();
+        // background
+        this._dsChampferPath(ctx, toastX, stripY, toastW, bh, cut);
+        ctx.fillStyle = "rgba(10,10,20,0.88)";
+        ctx.fill();
+        // top accent
+        ctx.fillStyle = this.DS_ACCENT;
+        ctx.fillRect(toastX, stripY, toastW, 3);
+        // subtle border
+        this._dsChampferPath(ctx, toastX, stripY, toastW, bh, cut);
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // text
+        ctx.font = "600 11px 'Inter', sans-serif";
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#8c8c9e";
+        ctx.fillText(instruction, toastX + toastW / 2, stripY + bh / 2);
+        ctx.restore();
+      }
+    }
+
     p.noStroke();
   }
 
@@ -661,18 +969,64 @@ class Quete3 extends Quest {
     drawJaxx2D(p, p.width * 0.06, p.height * 0.72, 0.6, 0, idleWalk, 1);
   }
 
+  _drawNextButton(p) {
+    if (!this.guitarMode) return;
+    const btn = this._nextBtnPos(p);
+    const prog = this.dwellProgress;
+    const ctx = p.drawingContext;
+    const cut = 16;
+
+    ctx.save();
+
+    // 1. Dark background
+    this._dsChampferPath(ctx, btn.x, btn.y, btn.w, btn.h, cut);
+    ctx.fillStyle = "rgba(10,10,20,0.92)";
+    ctx.fill();
+
+    // 2. Progress gauge fill (clipped to chamfered shape, left→right)
+    if (prog > 0) {
+      ctx.save();
+      this._dsChampferPath(ctx, btn.x, btn.y, btn.w, btn.h, cut);
+      ctx.clip();
+      ctx.fillStyle = this.DS_ACCENT;
+      ctx.fillRect(btn.x, btn.y, btn.w * prog, btn.h);
+      ctx.restore();
+    }
+
+    // 3. Top accent strip (4 px, like .context-menu::before)
+    ctx.fillStyle = this.DS_ACCENT;
+    ctx.fillRect(btn.x, btn.y, btn.w, 4);
+
+    // 4. Border
+    this._dsChampferPath(ctx, btn.x, btn.y, btn.w, btn.h, cut);
+    ctx.strokeStyle = prog > 0 ? this.DS_ACCENT : "rgba(247,37,133,0.4)";
+    ctx.lineWidth = prog > 0 ? 2 : 1.5;
+    ctx.stroke();
+
+    // 5. Label — dark on filled bg, white otherwise
+    ctx.font = "900 12px 'Inter', sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillStyle = prog > 0.5 ? "rgba(0,0,0,0.9)" : "#ffffff";
+    ctx.fillText(
+      "QUÊTE SUIVANTE  ▶",
+      btn.x + btn.w / 2,
+      btn.y + btn.h / 2 + 1,
+    );
+
+    ctx.restore();
+    p.noStroke();
+  }
+
   cleanup(p) {
     super.cleanup(p);
+    // Stop detection loop first — prevents any pending detect() from firing
+    this._loopActive = false;
+    this.handPose = null;
+
     if (this._winTimeout) {
       clearTimeout(this._winTimeout);
       this._winTimeout = null;
-    }
-    if (this.handPose) {
-      const hp = this.handPose;
-      this.handPose = null;
-      try {
-        if (hp.detectStop) hp.detectStop();
-      } catch (e) {}
     }
     if (this.video) {
       try {
@@ -690,6 +1044,10 @@ class Quete3 extends Quest {
     this.hands = [];
     this.draggedWire = null;
     this.sparks = [];
+    this.guitarMode = false;
+    this._prevHandY = null;
+    this._guitarDone = false;
+    this.dwellProgress = 0;
   }
 
   onMousePressed(p) {
