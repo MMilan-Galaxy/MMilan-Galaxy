@@ -1,0 +1,123 @@
+:root {
+  --pink-deep: #b23e6b;
+  --pink: #ff8fbe;
+  --cream: #fff2d8;
+  --gold: #ffd864;
+  --choco: #5a2e18;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0; 
+  padding: 0;
+  background: radial-gradient(ellipse at top, #ffb8d2 0%, #ff7aa8 40%, #6b1e45 100%);
+  font-family: "Courier New", monospace;
+  color: var(--cream);
+  min-height: 100vh;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+#app {
+  display: flex; 
+  flex-direction: column; 
+  align-items: flex-start;
+  padding: 12px;
+  gap: 8px;
+}
+
+h1 {
+  margin: 0 0 4px; 
+  font-size: 22px; 
+  letter-spacing: 3px;
+  color: var(--cream);
+  text-shadow: 3px 3px 0 var(--pink-deep), 6px 6px 0 var(--choco);
+  image-rendering: pixelated;
+}
+
+#hud {
+  display: flex; 
+  gap: 8px; 
+  flex-wrap: wrap;
+  background: rgba(44, 14, 33, 0.75);
+  border: 3px solid var(--gold);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  align-items: center;
+}
+
+.btn {
+  background: var(--pink);
+  color: #2c0e21;
+  border: 2px solid var(--pink-deep);
+  padding: 5px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 11px;
+  letter-spacing: 1px;
+  image-rendering: pixelated;
+  border-radius: 2px;
+}
+
+.btn:hover { 
+  background: var(--gold); 
+}
+
+.btn.active {
+  background: var(--gold);
+  color: var(--choco);
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+#status {
+  font-size: 10px; 
+  opacity: 0.85; 
+  min-width: 160px;
+}
+
+#stage { 
+  position: relative; 
+}
+
+canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  border: 4px solid var(--gold);
+  border-radius: 4px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  background: #ffb8d2;
+}
+
+#videoWrap {
+  position: absolute; 
+  right: 8px; 
+  top: 8px;
+  width: 140px; 
+  height: 105px;
+  border: 2px solid var(--gold);
+  border-radius: 3px;
+  overflow: hidden; 
+  display: none;
+  background: #000;
+  z-index: 5;
+}
+
+#videoWrap video, #videoWrap canvas {
+  width: 100%; 
+  height: 100%; 
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.tag { 
+  font-size: 10px; 
+  color: var(--gold); 
+}

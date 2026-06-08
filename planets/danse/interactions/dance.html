@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"></script>
+    <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --cyan: #9d4edd;
+            --yellow: #ffe600;
+            --magenta: #ff2d78;
+            --dark: #050810;
+            --glass: rgba(5, 8, 16, 0.82);
+        }
+
+        body {
+            background: var(--dark);
+            overflow: hidden;
+            font-family: 'Space Mono', monospace;
+            color: #fff;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* ═══════════════════════════════════════════
+           DÉCOR TRIPLE ÉCRAN
+        ═══════════════════════════════════════════ */
+        #bg-decor {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+        #bg-decor canvas { position: absolute; inset: 0; }
+
+        /* Cadres latéraux visibles sur grand écran */
+        .side-panel {
+            position: fixed;
+            top: 0; bottom: 0;
+            width: calc((100vw - min(100vw, 1920px)) / 2);
+            z-index: 1;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+        }
+        .side-panel.left  { left: 0; }
+        .side-panel.right { right: 0; }
+        .side-glyph {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: clamp(14px, 1.4vw, 28px);
+            letter-spacing: .4em;
+            writing-mode: vertical-rl;
+            color: rgba(0,255,204,0.12);
+            text-transform: uppercase;
+        }
+        .side-line {
+            width: 1px;
+            flex: 1;
+            max-height: 180px;
+            background: linear-gradient(to bottom, transparent, #9d4edd, transparent);
+        }
+
+        /* ═══════════════════════════════════════════
+           PAGES
+        ═══════════════════════════════════════════ */
+        .page {
+            position: fixed;
+            inset: 0;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity .5s ease, visibility .5s;
+        }
+        .page.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        /* ── PAGE INTRO ── */
+        #page-intro {
+            background: radial-gradient(ellipse 70% 70% at 50% 50%, #0a1528 0%, var(--dark) 100%);
+        }
+        .intro-card {
+            background: var(--glass);
+            border: 1px solid rgba(0,255,204,.25);
+            border-radius: 24px;
+            padding: 60px 70px;
+            max-width: 780px;
+            width: 90%;
+            text-align: center;
+            backdrop-filter: blur(18px);
+            box-shadow: 0 0 80px #9d4edd, 0 0 0 1px #9d4edd inset;
+            position: relative;
+            overflow: hidden;
+        }
+        .intro-card::before {
+            content: '';
+            position: absolute;
+            top: -60px; left: -60px;
+            width: 220px; height: 220px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #9d4edd 0%, transparent 70%);
+        }
+        .intro-card::after {
+            content: '';
+            position: absolute;
+            bottom: -40px; right: -40px;
+            width: 160px; height: 160px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,46,120,.1) 0%, transparent 70%);
+        }
+        .intro-title {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: clamp(48px, 6vw, 84px);
+            line-height: 1;
+            letter-spacing: .04em;
+            color: #fff;
+            margin-bottom: 28px;
+        }
+        .intro-sub {
+            font-size: 15px;
+            color: rgba(255,255,255,.55);
+            margin-bottom: 36px;
+            line-height: 1.5;
+        }
+        .rules {
+            list-style: none;
+            text-align: left;
+            margin-bottom: 44px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            border-top: 1px solid rgba(255,255,255,.08);
+            padding-top: 28px;
+        }
+        .rules li {
+            font-size: 15px;
+            line-height: 1.5;
+            color: rgba(255,255,255,.72);
+            padding-left: 18px;
+            border-left: 2px solid var(--cyan);
+        }
+
+        /* ── BTN PLAY ── */
+        #btn-play {
+            display: inline-flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--cyan);
+            color: #000;
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 26px;
+            letter-spacing: .12em;
+            padding: 18px 52px;
+            border-radius: 100px;
+            border: none;
+            cursor: pointer;
+            transition: transform .18s ease, box-shadow .18s ease;
+            box-shadow: 0 0 40px #9d4edd;
+            position: relative;
+            z-index: 1;
+        }
+        #btn-play:hover  { transform: scale(1.05); box-shadow: 0 0 60px #9d4edd; }
+        #btn-play:active { transform: scale(.97); }
+        #btn-play svg { width: 20px; height: 20px; }
+
+        /* ── PAGE CHARGEMENT ── */
+        #page-loading {
+            background: rgba(5,8,16,.96);
+            backdrop-filter: blur(8px);
+        }
+        .loading-wrap { text-align: center; }
+        .loading-icon {
+            width: 56px; height: 56px;
+            border: 2px solid #2b2b2b;
+            border-top-color: var(--cyan);
+            border-radius: 50%;
+            margin: 0 auto 28px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-title {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 32px;
+            letter-spacing: .12em;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+        .loading-msg {
+            font-size: 13px;
+            color: rgba(255,255,255,.38);
+            letter-spacing: .06em;
+            line-height: 1.7;
+        }
+        .loading-steps {
+            margin-top: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            text-align: left;
+            max-width: 300px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .ls-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            color: rgba(255,255,255,.3);
+            transition: color .4s;
+        }
+        .ls-item.done  { color: rgba(255,255,255,.75); }
+        .ls-item.done .ls-dot { background: var(--cyan); box-shadow: 0 0 8px rgba(0,255,204,.5); }
+        .ls-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: rgba(255,255,255,.15);
+            flex-shrink: 0;
+            transition: background .4s, box-shadow .4s;
+        }
+
+        /* ── PAGE GAME ── */
+        #page-game { z-index: 5; pointer-events: auto; }
+
+        /* Canvas p5 centré dans la zone centrale */
+        #defaultCanvas0 {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            /* Limiter à 1920px max sur 5760px */
+            max-width: min(100vw, 1920px) !important;
+        }
+
+        /* Score UI du jeu — repositionné pour centrage */
+        #ui {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 20px;
+            z-index: 20;
+            pointer-events: none;
+            width: min(100vw, 1920px);
+            text-align: center;
+        }
+        .score-box {
+            display: inline-block;
+            background: rgba(0,0,0,0.8);
+            border: 3px solid #9d4edd;
+            padding: 10px 30px;
+            border-radius: 15px;
+        }
+        #score-val { font-size: 45px; color: #fff; font-weight: bold; }
+
+        /* ── PAGE SCORE FINAL ── */
+        #page-score {
+            background: rgba(5,8,16,.95);
+            backdrop-filter: blur(10px);
+        }
+        .final-score-card {
+            text-align: center;
+        }
+        .fs-label {
+            font-size: 12px;
+            letter-spacing: .5em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,.35);
+            margin-bottom: 16px;
+        }
+        .fs-title {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: clamp(40px, 6vw, 80px);
+            color: #fff;
+            letter-spacing: .06em;
+            margin-bottom: 40px;
+        }
+        .fs-score {
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: clamp(100px, 18vw, 200px);
+            line-height: 1;
+            background: linear-gradient(135deg, var(--yellow), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: none;
+            margin-bottom: 20px;
+            animation: scoreReveal .6s cubic-bezier(.34,1.56,.64,1) both;
+        }
+        @keyframes scoreReveal {
+            from { transform: scale(.4); opacity: 0; }
+            to   { transform: scale(1);  opacity: 1; }
+        }
+        .fs-pts {
+            font-size: 13px;
+            letter-spacing: .4em;
+            color: rgba(255,255,255,.4);
+            text-transform: uppercase;
+            margin-bottom: 48px;
+        }
+        .fs-bar-wrap {
+            width: 260px;
+            height: 4px;
+            background: rgba(255,255,255,.1);
+            border-radius: 4px;
+            margin: 0 auto 8px;
+            overflow: hidden;
+        }
+        .fs-bar-fill {
+            height: 100%;
+            background: var(--cyan);
+            border-radius: 4px;
+            animation: barShrink linear forwards;
+        }
+        @keyframes barShrink {
+            from { width: 100%; }
+            to   { width: 0%; }
+        }
+        .fs-back-hint {
+            font-size: 11px;
+            letter-spacing: .3em;
+            color: rgba(255,255,255,.28);
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+<!-- DÉCOR FOND (visible sur les écrans latéraux en config triple-écran) -->
+<div id="bg-decor"><canvas id="decor-canvas"></canvas></div>
+<div class="side-panel left">
+    <div class="side-line"></div>
+    <div class="side-glyph">DANSE &amp; SCORE</div>
+    <div class="side-line"></div>
+    <div class="side-glyph">REPRODUIS</div>
+    <div class="side-line"></div>
+</div>
+<div class="side-panel right">
+    <div class="side-line"></div>
+    <div class="side-glyph">BOUGE TON CORPS</div>
+    <div class="side-line"></div>
+    <div class="side-glyph">EN RYTHME</div>
+    <div class="side-line"></div>
+</div>
+
+<!-- ── PAGE INTRO ── -->
+<div id="page-intro" class="page">
+    <div class="intro-card">
+        <h1 class="intro-title">Comment jouer</h1>
+        <p class="intro-sub">Regarde le coach à gauche et reproduis ses mouvements devant la caméra.</p>
+        <ul class="rules">
+            <li>Mets-toi bien en face de la caméra, visible de la tête aux pieds.</li>
+            <li>Copie les mouvements de la vidéo en temps réel — plus tu es précis, plus tu marques de points.</li>
+            <li>La partie dure le temps de la vidéo. Ton score s'affiche à la fin.</li>
+        </ul>
+        <button id="btn-play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            C'est parti
+        </button>
+    </div>
+</div>
+
+<!-- ── PAGE CHARGEMENT ── -->
+<div id="page-loading" class="page hidden">
+    <div class="loading-wrap">
+        <div class="loading-icon"></div>
+        <div class="loading-title">Chargement en cours…</div>
+        <div class="loading-msg">Autorise l'accès à la caméra si une demande apparaît.</div>
+        <div class="loading-steps">
+            <div class="ls-item" id="ls-camera"><div class="ls-dot"></div>Accès caméra</div>
+            <div class="ls-item" id="ls-video"><div class="ls-dot"></div>Vidéo coach</div>
+            <div class="ls-item" id="ls-model"><div class="ls-dot"></div>Détection de pose</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── PAGE JEU (canvas p5 rendu ici) ── -->
+<div id="page-game" class="page hidden"></div>
+
+<!-- Score UI (toujours au-dessus) -->
+<div id="ui">
+    <div class="score-box">
+        <div style="color:#9d4edd;font-size:12px">SCORE</div>
+        <div id="score-val">0</div>
+    </div>
+</div>
+
+<button id="btn-quit">✕ Quitter</button>
+
+<!-- ── PAGE SCORE FINAL ── -->
+<div id="page-score" class="page hidden">
+    <div class="final-score-card">
+        <div class="fs-label">Partie terminée</div>
+        <div class="fs-title">TON SCORE FINAL</div>
+        <div class="fs-score" id="fs-score-val">0</div>
+        <div class="fs-pts">points</div>
+        <div class="fs-bar-wrap"><div class="fs-bar-fill" id="fs-bar"></div></div>
+        <div class="fs-back-hint">Retour dans 3 secondes…</div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     CODE JEU ORIGINAL (inchangé)
+══════════════════════════════════════ -->
+<script>
+    // ── Variables de pilotage (ajoutées autour du code original) ──
+    let gameStarted = false;
+    let gameEnded   = false;
+
+    // ── Code original ──────────────────────────────────────────────
+    let bodyPose;
+    let videoModel, videoPlayer;
+    let posesModel = [], posesPlayer = [];
+    let connections;
+    let totalScore = 0;
+
+    const vW = 640;
+    const vH = 480;
+
+    function preload() {
+        bodyPose = ml5.bodyPose("MoveNet", { flipHorizontal: false });
+    }
+
+    function setup() {
+        // Canvas centré via CSS sur la zone centrale
+        let cnv = createCanvas(windowWidth, windowHeight, WEBGL);
+        cnv.style('max-width', 'min(100vw, 1920px)');
+
+        videoModel = createVideo(['exemple2.mp4'], () => {
+            // NE PAS boucler : on joue une seule fois
+            videoModel.volume(0);
+            videoModel.size(vW, vH);
+            videoModel.hide();
+            // Écoute de la fin de la vidéo
+            videoModel.elt.addEventListener('ended', onVideoEnded);
+        });
+
+        videoPlayer = createCapture(VIDEO);
+        videoPlayer.size(vW, vH);
+        videoPlayer.hide();
+
+        bodyPose.detectStart(videoPlayer, (results) => { posesPlayer = results; });
+        connections = bodyPose.getSkeleton();
+    }
+
+    function draw() {
+        if (!gameStarted) return; // Attendre le signal de départ
+
+        background(10);
+
+        if (frameCount % 2 === 0) {
+            bodyPose.detect(videoModel, (results) => { posesModel = results; });
+        }
+
+        let halfW = width / 2;
+        let s  = min(halfW / vW, height / vH);
+        let dW = vW * s;
+        let dH = vH * s;
+
+        push(); translate(-halfW / 2, 0);
+        drawActor(videoModel, posesModel, dW, dH, color(0, 255, 204));
+        pop();
+
+        push(); translate(halfW / 2, 0);
+        drawActor(videoPlayer, posesPlayer, dW, dH, color(255, 255, 0));
+        pop();
+
+        if (posesModel.length > 0 && posesPlayer.length > 0) {
+            checkScore(posesModel[0], posesPlayer[0]);
+        }
+    }
+
+    function drawActor(vid, poses, w, h, col) {
+        push();
+        scale(-1, 1);
+        texture(vid);
+        noStroke();
+        rect(-w/2, -h/2, w, h);
+        pop();
+
+        if (poses.length > 0) {
+            let pose = poses[0];
+            let kps  = pose.keypoints;
+            const getCoord = (kp) => {
+                let x = map(kp.x, 0, vW, -w/2, w/2);
+                let y = map(kp.y, 0, vH, -h/2, h/2);
+                return { x: -x, y: y };
+            };
+            let leftE  = kps[3];
+            let rightE = kps[4];
+            if (leftE.confidence > 0.2 && rightE.confidence > 0.2) {
+                let p1 = getCoord(leftE);
+                let p2 = getCoord(rightE);
+                let headX   = (p1.x + p2.x) / 2;
+                let headY   = (p1.y + p2.y) / 2;
+                let headSize = dist(p1.x, p1.y, p2.x, p2.y) * 2.5;
+                fill(col); noStroke();
+                ellipse(headX, headY - headSize/4, headSize);
+            }
+            stroke(col);
+            strokeWeight(w * 0.015);
+            for (let conn of connections) {
+                let a = kps[conn[0]];
+                let b = kps[conn[1]];
+                if (a.confidence > 0.2 && b.confidence > 0.2 && conn[0] > 4) {
+                    let pA = getCoord(a);
+                    let pB = getCoord(b);
+                    line(pA.x, pA.y, pB.x, pB.y);
+                }
+            }
+        }
+    }
+
+    function checkScore(p1, p2) {
+        let d = 0;
+        let joints = [5, 6, 7, 8, 9, 10, 11, 12];
+        for (let i of joints) {
+            d += dist(p1.keypoints[i].x/vW, p1.keypoints[i].y/vH,
+                      p2.keypoints[i].x/vW, p2.keypoints[i].y/vH);
+        }
+        if (d/joints.length < 0.2) {
+            totalScore += 5;
+            document.getElementById('score-val').innerText = totalScore;
+        }
+    }
+
+    function mousePressed() {
+        // Désactivé : la lecture est pilotée par le flow de pages
+    }
+    function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+    // ── Fin du code original ───────────────────────────────────────
+</script>
+
+<!-- ══════════════════════════════════════
+     PILOTAGE DES PAGES & DÉCOR (ajouts)
+══════════════════════════════════════ -->
+<script>
+(function() {
+
+    /* ── Utilitaires de pages ── */
+    function show(id) {
+        document.getElementById(id).classList.remove('hidden');
+    }
+    function hide(id) {
+        document.getElementById(id).classList.add('hidden');
+    }
+
+    /* ── Affichage de l'écran de chargement puis démarrage ── */
+    function startLoading() {
+        hide('page-intro');
+        show('page-loading');
+
+        // p5 / ml5 ont déjà lancé setup() — on surveille l'état des ressources
+        const lsCamera = document.getElementById('ls-camera');
+        const lsVideo  = document.getElementById('ls-video');
+        const lsModel  = document.getElementById('ls-model');
+
+        let cameraOk = false;
+        let videoOk  = false;
+        let modelOk  = false;
+
+        function check() {
+            // Caméra prête (videoPlayer a des données)
+            if (!cameraOk && videoPlayer && videoPlayer.elt &&
+                videoPlayer.elt.readyState >= 2) {
+                cameraOk = true;
+                lsCamera.classList.add('done');
+            }
+            // Vidéo coach prête
+            if (!videoOk && videoModel && videoModel.elt &&
+                videoModel.elt.readyState >= 2) {
+                videoOk = true;
+                lsVideo.classList.add('done');
+            }
+            // Modèle de pose prêt (au moins une détection a eu lieu ou bodyPose chargé)
+            if (!modelOk && (posesPlayer.length > 0 || posesModel.length > 0 ||
+                (bodyPose && typeof bodyPose.detect === 'function' && cameraOk && videoOk))) {
+                // On considère le modèle OK dès que caméra + vidéo sont prêts
+                // (ml5 charge en arrière-plan, pas d'événement direct)
+                modelOk = true;
+                lsModel.classList.add('done');
+            }
+
+            if (cameraOk && videoOk && modelOk) {
+                // Tout est prêt — démarrer après un court délai pour que l'utilisateur voit
+                setTimeout(startGame, 600);
+            } else {
+                setTimeout(check, 300);
+            }
+        }
+
+        // Attendre que p5 ait initialisé les variables (setup s'exécute après preload)
+        setTimeout(check, 800);
+    }
+
+    /* ── Démarrage du jeu ── */
+    function startGame() {
+        hide('page-loading');
+        show('page-game');
+        document.getElementById('btn-quit').style.display = 'block';
+        document.getElementById('ui').style.display = 'block';
+
+        // Signal au code p5
+        gameStarted = true;
+        // Lancer la vidéo du coach (une seule fois, pas en boucle)
+        videoModel.play();
+    }
+
+    /* ── Fin naturelle de la vidéo ── */
+    function onVideoEnded() {
+        if (gameEnded) return;
+        gameEnded = true;
+        gameStarted = false;
+        showFinalScore();
+    }
+    // Exposer au scope global pour l'addEventListener dans setup()
+    window.onVideoEnded = onVideoEnded;
+
+    /* ── Affichage du score final ── */
+    function showFinalScore() {
+        hide('page-game');
+        document.getElementById('btn-quit').style.display = 'none';
+        document.getElementById('ui').style.display = 'none';
+
+        document.getElementById('fs-score-val').textContent = totalScore;
+        show('page-score');
+
+        // Barre de progression de 3 s
+        const bar = document.getElementById('fs-bar');
+        bar.style.animation = 'none';
+        bar.offsetHeight; // reflow
+        bar.style.animation = 'barShrink 3s linear forwards';
+
+        setTimeout(() => { window.location.href = '../index.html'; }, 3000);
+    }
+
+    /* ── Retour à la page d'intro ── */
+    function returnToIntro() {
+        window.location.href = '../index.html';
+    }
+
+    /* ── Boutons ── */
+    document.getElementById('btn-play').addEventListener('click', startLoading);
+    document.getElementById('btn-quit').addEventListener('click', returnToIntro);
+
+    /* ── Décor fond particules / grille ── */
+    (function initDecor() {
+        const canvas = document.getElementById('decor-canvas');
+        const ctx    = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width  = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // Particules flottantes
+        const PARTICLE_COUNT = 120;
+        const particles = Array.from({ length: PARTICLE_COUNT }, () => ({
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * window.innerHeight,
+            vx: (Math.random() - .5) * .3,
+            vy: (Math.random() - .5) * .3,
+            r: Math.random() * 1.8 + .4,
+            a: Math.random() * .5 + .1,
+            hue: Math.random() > .5 ? '0,255,204' : '255,46,120',
+        }));
+
+        // Lignes de grille perpendiculaires (style HUD futuriste)
+        function drawGrid() {
+            const W = canvas.width;
+            const H = canvas.height;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0,255,204,0.04)';
+            ctx.lineWidth = 1;
+            const step = 80;
+            for (let x = 0; x < W; x += step) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+            for (let y = 0; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+            // Séparateurs de "zones d'écran"
+            if (W > 2560) {
+                const zones = [W/3, 2*W/3];
+                ctx.strokeStyle = 'rgba(0,255,204,0.1)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([6, 14]);
+                zones.forEach(x => { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); });
+                ctx.setLineDash([]);
+            }
+            ctx.restore();
+        }
+
+        // Lueurs d'ambiance sur les bords
+        function drawGlow() {
+            const W = canvas.width;
+            const H = canvas.height;
+            [
+                { x: 0,   y: H*.5, r: Math.min(W*.18, 340), col: 'rgba(0,255,204,0.07)' },
+                { x: W,   y: H*.5, r: Math.min(W*.18, 340), col: 'rgba(255,46,120,0.06)' },
+                { x: W*.5, y: H,   r: Math.min(H*.3, 300),  col: 'rgba(0,180,255,0.05)' },
+            ].forEach(g => {
+                const grad = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, g.r);
+                grad.addColorStop(0, g.col);
+                grad.addColorStop(1, 'transparent');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, W, H);
+            });
+        }
+
+        let raf;
+        function loop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            drawGlow();
+
+            // Particules
+            particles.forEach(p => {
+                p.x += p.vx; p.y += p.vy;
+                if (p.x < 0) p.x = canvas.width;
+                if (p.x > canvas.width)  p.x = 0;
+                if (p.y < 0) p.y = canvas.height;
+                if (p.y > canvas.height) p.y = 0;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${p.hue},${p.a})`;
+                ctx.fill();
+            });
+
+            // Connexions entre particules proches
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i+1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const d  = Math.sqrt(dx*dx + dy*dy);
+                    if (d < 90) {
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.strokeStyle = `rgba(0,255,204,${.06 * (1 - d/90)})`;
+                        ctx.lineWidth = .8;
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            raf = requestAnimationFrame(loop);
+        }
+        loop();
+    })();
+
+})();
+</script>
+
+</body>
+</html>

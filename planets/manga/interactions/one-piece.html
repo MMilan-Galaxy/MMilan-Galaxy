@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>One Piece — Gomu Gomu</title>
+<script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
+  body { background:#04243f; overflow:hidden; height:100vh; font-family:'Inter',sans-serif; color:#fff; }
+  #cam { position:absolute; inset:0; width:100vw; height:100vh; object-fit:cover; transform:scaleX(-1); }
+  #cv { position:absolute; inset:0; }
+  #hud { position:fixed; top:0; left:0; right:0; padding:28px 40px; display:flex; justify-content:space-between; z-index:5; pointer-events:none; }
+  #title { font-family:'Bangers',sans-serif; font-size:34px; letter-spacing:4px; color:#ffcf3b; text-shadow:0 0 24px #c41e3a; }
+  #title small { display:block; font-family:'Inter'; font-weight:400; font-size:12px; color:#bcd; letter-spacing:2px; margin-top:4px; }
+  #status { font-size:13px; letter-spacing:2px; text-transform:uppercase; color:#9fc; text-align:right; }
+  #kos { position:fixed; top:90px; left:50%; transform:translateX(-50%); display:flex; gap:14px; z-index:5; }
+  .ko { padding:6px 22px; border-radius:20px; border:2px solid #ffcf3b; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; font-family:'Bangers',sans-serif; letter-spacing:2px; font-size:20px; color:#ffcf3b; }
+  #shout { position:fixed; top:38%; left:50%; transform:translate(-50%,-50%) rotate(-6deg); font-family:'Bangers',sans-serif; font-size:88px; letter-spacing:5px; color:#ffcf3b; text-shadow:0 0 30px #c41e3a,0 0 60px #000; opacity:0; transition:.1s; z-index:6; pointer-events:none; }
+  #finish-btn, #startBtn { position:fixed; left:50%; transform:translateX(-50%); background:#ffcf3b; color:#000; border:2px solid #ffcf3b; padding:14px 40px; font-family:'Bangers',sans-serif; letter-spacing:3px; font-size:20px; cursor:pointer; z-index:20; clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px); }
+  #finish-btn { bottom:40px; display:none; box-shadow:0 0 30px #ffcf3b; }
+  #finish-btn.show { display:block; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 30px #ffcf3b;} 50%{box-shadow:0 0 60px #fff;} }
+  #prompt { position:fixed; inset:0; background:rgba(2,18,34,0.93); z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:20px; }
+  #prompt h2 { font-family:'Bangers',sans-serif; font-size:46px; color:#ffcf3b; letter-spacing:4px; }
+  #prompt p { color:#bcd; max-width:520px; line-height:1.6; }
+  #startBtn { position:static; transform:none; }
+  #err { color:#ff6b6b; font-size:13px; min-height:18px; }
+</style>
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <div id="title">GOMU GOMU NO...<small>Recule pour être vu en entier, puis envoie un grand coup de poing</small></div>
+  <div id="status">Pose : <strong id="pose-status">—</strong></div>
+</div>
+<div id="kos"><div class="ko" id="ko-count">0 / 8</div></div>
+<div id="shout">PISTOLET !</div>
+<button id="finish-btn">TERMINER ✦</button>
+
+<div id="prompt">
+  <h2>GEAR — GOMU GOMU NO PISTOLET</h2>
+  <p>Trois Marines bloquent le ponton ! Recule pour que la caméra voie tes <strong>épaules et tes bras</strong>, puis <strong>détends brusquement le bras vers l'avant</strong> comme un coup de poing élastique pour les éjecter.</p>
+  <button id="startBtn">ACTIVER LA CAMÉRA</button>
+  <div id="err"></div>
+</div>
+
+<script>
+const cam = document.getElementById('cam');
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const poseStatus = document.getElementById('pose-status');
+const shout = document.getElementById('shout');
+
+let landmarks = null;
+let kos = 0, started = false, finished = false;
+const TARGET = 8;
+let frame = 0;
+let marine = spawnMarine();
+let punchAnim = null;
+let prevExt = { L: 0, R: 0 };
+let lastPunchAt = 0;
+
+// ─── SFX ───
+let _ac=null; function ac(){ if(!_ac)_ac=new(window.AudioContext||window.webkitAudioContext)(); if(_ac.state==='suspended')_ac.resume(); return _ac; }
+function snd(f,t,d,v){ try{const a=ac(),o=a.createOscillator(),g=a.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+d);}catch(e){} }
+function noise(d,v,lo,hi){ try{const a=ac();const b=a.createBuffer(1,a.sampleRate*d,a.sampleRate);const dt=b.getChannelData(0);for(let i=0;i<dt.length;i++)dt[i]=(Math.random()*2-1)*(1-i/dt.length);const s=a.createBufferSource();s.buffer=b;const f=a.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(lo,a.currentTime);f.frequency.exponentialRampToValueAtTime(hi,a.currentTime+d);const g=a.createGain();g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);s.connect(f);f.connect(g);g.connect(a.destination);s.start();}catch(e){} }
+const SFX = {
+  punch(){ noise(0.25,0.14,300,2600); snd(160,'square',0.12,0.1); },
+  ko(){ snd(80,'sawtooth',0.3,0.18); noise(0.3,0.12,120,500); },
+  victory(){ [523,659,784,1047,1318].forEach((f,i)=>setTimeout(()=>snd(f,'sine',0.3,0.13),i*100)); },
+};
+
+function resize(){ cv.width = innerWidth; cv.height = innerHeight; }
+addEventListener('resize', resize); resize();
+
+function spawnMarine() {
+  return { x: 0.5 + (Math.random()-0.5)*0.25, y: 0.42 + (Math.random()-0.5)*0.15, hp: 1, hit: 0, dead: false, deathT: 0 };
+}
+
+function d(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+function detectPunch() {
+  if (!landmarks) { poseStatus.textContent = 'NON DÉTECTÉE'; poseStatus.style.color = '#ff6b6b'; return; }
+  const ls = landmarks[11], rs = landmarks[12], lw = landmarks[15], rw = landmarks[16];
+  if (!ls || !rs || !lw || !rw) return;
+  const shoulderW = Math.max(0.05, d(ls, rs));
+  const extL = d(ls, lw) / shoulderW;
+  const extR = d(rs, rw) / shoulderW;
+  poseStatus.textContent = 'OK'; poseStatus.style.color = '#9fc';
+
+  const now = performance.now();
+  // rising edge over threshold = punch
+  const TH = 1.7;
+  let armPunch = null;
+  if (extL > TH && prevExt.L <= TH) armPunch = { arm:'L', sh: ls, wr: lw };
+  if (extR > TH && prevExt.R <= TH) armPunch = { arm:'R', sh: rs, wr: rw };
+  prevExt.L = extL; prevExt.R = extR;
+
+  if (armPunch && now - lastPunchAt > 500 && !punchAnim && !marine.dead) {
+    lastPunchAt = now;
+    // shoulder screen pos (mirrored)
+    const sx = (1 - armPunch.sh.x) * cv.width;
+    const sy = armPunch.sh.y * cv.height;
+    punchAnim = { t: 0, sx, sy, tx: marine.x * cv.width, ty: marine.y * cv.height, arm: armPunch.arm };
+    SFX.punch();
+    shout.style.opacity = '1'; shout.style.transform = 'translate(-50%,-50%) rotate(' + (Math.random()*8-4) + 'deg) scale(1.1)';
+    setTimeout(() => shout.style.opacity = '0', 450);
+  }
+}
+
+function drawMarine() {
+  const mx = marine.x * cv.width, my = marine.y * cv.height;
+  ctx.save();
+  if (marine.dead) {
+    // fly off
+    marine.deathT += 0.05;
+    const off = marine.deathT * 400;
+    ctx.translate(off, -off * 0.6); ctx.rotate(marine.deathT * 2); ctx.globalAlpha = Math.max(0, 1 - marine.deathT);
+  }
+  const s = 1 + marine.hit * 0.3; marine.hit *= 0.8;
+  ctx.translate(mx, my); ctx.scale(s, s);
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(0, 60, 34, 12, 0, 0, Math.PI*2); ctx.fill();
+  // body (marine coat - white/navy)
+  ctx.fillStyle = '#eef2f6'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(-26, -10, 52, 70, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#27406a'; ctx.fillRect(-26, -10, 52, 12);
+  // "MARINE" band
+  ctx.fillStyle = '#27406a'; ctx.font = 'bold 13px Inter'; ctx.textAlign = 'center'; ctx.fillText('海軍', 0, 35);
+  // head
+  ctx.fillStyle = '#f4c28a'; ctx.beginPath(); ctx.ellipse(0, -34, 20, 22, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  // cap
+  ctx.fillStyle = '#1a2a4a'; ctx.beginPath(); ctx.ellipse(0, -50, 24, 10, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, -56, 16, 12, 0, Math.PI, true); ctx.fill(); ctx.stroke();
+  if (marine.dead) { ctx.fillStyle='#10070a'; ctx.font='bold 16px Inter'; ctx.fillText('×  ×', 0, -32); }
+  ctx.restore();
+}
+
+function drawPunch() {
+  if (!punchAnim) return;
+  punchAnim.t += 0.12;
+  const t = punchAnim.t;
+  // extend to target then retract
+  const reach = t < 0.5 ? (t / 0.5) : (1 - (t - 0.5) / 0.5);
+  const fx = punchAnim.sx + (punchAnim.tx - punchAnim.sx) * reach;
+  const fy = punchAnim.sy + (punchAnim.ty - punchAnim.sy) * reach;
+  // rubber arm
+  ctx.save();
+  ctx.strokeStyle = '#f4c28a'; ctx.lineWidth = 26; ctx.lineCap = 'round';
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(punchAnim.sx, punchAnim.sy);
+  const midx = (punchAnim.sx + fx)/2, midy = (punchAnim.sy + fy)/2 - 30*Math.sin(reach*Math.PI);
+  ctx.quadraticCurveTo(midx, midy, fx, fy); ctx.stroke();
+  ctx.strokeStyle = '#10070a'; ctx.lineWidth = 30; ctx.globalCompositeOperation='destination-over';
+  ctx.beginPath(); ctx.moveTo(punchAnim.sx, punchAnim.sy); ctx.quadraticCurveTo(midx, midy, fx, fy); ctx.stroke();
+  ctx.globalCompositeOperation='source-over';
+  // fist
+  ctx.fillStyle = '#f4c28a'; ctx.strokeStyle = '#10070a'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(fx, fy, 28, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  // speed lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3;
+  for (let i=0;i<8;i++){ const a=(i/8)*Math.PI*2; ctx.beginPath(); ctx.moveTo(fx+Math.cos(a)*34, fy+Math.sin(a)*34); ctx.lineTo(fx+Math.cos(a)*54, fy+Math.sin(a)*54); ctx.stroke(); }
+  ctx.restore();
+
+  // impact at peak
+  if (t >= 0.46 && t <= 0.56 && !marine.dead) {
+    marine.hit = 1; marine.dead = true; marine.deathT = 0;
+    SFX.ko();
+    setTimeout(() => {
+      kos++;
+      document.getElementById('ko-count').textContent = Math.min(kos, TARGET) + ' / ' + TARGET;
+      if (kos >= TARGET) { finished = true; SFX.victory(); document.getElementById('finish-btn').classList.add('show'); }
+      else marine = spawnMarine();
+    }, 700);
+  }
+  if (t >= 1) punchAnim = null;
+}
+
+function drawWaves() {
+  // foreground sea sparkle
+  ctx.save(); ctx.globalAlpha = 0.25; ctx.strokeStyle = '#bfeeff'; ctx.lineWidth = 2;
+  for (let i=0;i<6;i++){ const y = cv.height*0.7 + i*30; ctx.beginPath();
+    for (let x=0;x<=cv.width;x+=40){ const yy = y + Math.sin(x*0.02 + frame*0.05 + i)*8; x===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy); } ctx.stroke(); }
+  ctx.restore();
+}
+
+function loop() {
+  frame++;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // subtle blue overlay for ocean mood
+  ctx.fillStyle = 'rgba(8,40,70,0.18)'; ctx.fillRect(0,0,cv.width,cv.height);
+  drawWaves();
+  if (started) {
+    detectPunch();
+    if (!finished || marine.dead) drawMarine();
+    drawPunch();
+  }
+  requestAnimationFrame(loop);
+}
+
+// ─── Bootstrap : flux caméra partagé par le hub (permission déjà accordée) ───
+async function getSharedStream() {
+  if (window.__mangaStream && window.__mangaStream.active) return window.__mangaStream;
+  try { const P = window.parent; if (P && P.__mangaStream && P.__mangaStream.active) return P.__mangaStream; } catch(e){}
+  return await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: true });
+}
+// Adapteur ml5 bodyPose (MoveNet) → format poseLandmarks compatible avec detectPunch
+// (places épaules/poignets aux indices 11/12/15/16 attendus par le code aval)
+function gotPoses(results) {
+  if (results && results.length > 0) {
+    const p = results[0];
+    const vw = cam.videoWidth || 640, vh = cam.videoHeight || 480;
+    const N = (kp) => (kp && (kp.confidence || 0) > 0.2) ? { x: kp.x / vw, y: kp.y / vh } : null;
+    const ls = N(p.left_shoulder), rs = N(p.right_shoulder), lw = N(p.left_wrist), rw = N(p.right_wrist);
+    if (ls && rs && lw && rw) {
+      const arr = []; arr[11] = ls; arr[12] = rs; arr[15] = lw; arr[16] = rw;
+      landmarks = arr;
+    } else landmarks = null;
+  } else landmarks = null;
+}
+(async () => {
+  const err = document.getElementById('err');
+  try {
+    const stream = await getSharedStream();
+    cam.srcObject = new MediaStream(stream.getVideoTracks());
+    await cam.play();
+    // BlazePose avec runtime mediapipe (le backend qui marche chez toi, pas TFJS)
+    const bodyPose = ml5.bodyPose('BlazePose', { runtime: 'mediapipe', flipped: false }, () => {
+      bodyPose.detectStart(cam, gotPoses);
+      document.getElementById('startBtn').textContent = 'C\'EST PARTI ▶';
+      document.getElementById('startBtn').disabled = false;
+    });
+  } catch (e) { err.textContent = 'Erreur caméra : ' + (e.message || e); }
+})();
+document.getElementById('startBtn').onclick = () => { ac(); document.getElementById('prompt').style.display = 'none'; started = true; };
+document.getElementById('finish-btn').onclick = () => { try { window.parent.postMessage({ type:'interaction-complete', id:'onepiece' }, '*'); } catch(e){} };
+loop();
+</script>
+<script src="mouse-fallback.js"></script>
+</body>
+</html>

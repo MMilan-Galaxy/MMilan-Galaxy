@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Planète Danse</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Montserrat:wght@900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.1/p5.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.1/addons/p5.sound.min.js"></script>
+<audio id="bg-music" src="assets/ambiance.mp3" loop autoplay></audio>
+<script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+
+:root {
+  --accent: #ff6b9d;
+  --accent2: #55efc4;
+  --accent3: #ff9e7a;
+  --accent4: #ff00c8;
+  --accent5: #00cec9;
+  --accent6: #9d4edd;
+  --bg: #050210;
+  --surface: rgba(10, 5, 30, 0.85);
+  --surface-dark: rgba(5, 2, 16, 0.95);
+  --text: #ffffff;
+  --text-sec: #8c8c9e;
+  --font-title: 'Montserrat', sans-serif;
+  --font-ui: 'Inter', sans-serif;
+  --snappy: 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+body, html {
+  background: var(--bg);
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+#iso-canvas { 
+  display: block; 
+  position: absolute; 
+  top: 0; 
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+}
+
+
+
+
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); } /* Flottement un poil plus ample */
+}
+
+#dialog-overlay {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 0 40px 30px;
+  z-index: 100;
+  pointer-events: none;
+}
+#dialog-overlay.active { display: block; pointer-events: all; }
+
+.dialog-box {
+  background: linear-gradient(135deg, var(--surface-dark) 0%, #000 100%);
+  border-top: 4px solid var(--accent6);
+  border-bottom: 1px solid #9d4edd;
+  padding: 30px 40px;
+  position: relative;
+  box-shadow: inset 0 20px 50px rgba(0,0,0,0.5), 0 -20px 80px rgba(255,107,157,0.1);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%);
+  max-width: 1200px; margin: 0 auto;
+}
+.dialog-badge {
+  position: absolute; top: 0; left: 0;
+  background: var(--accent6);
+  color: #000;
+  padding: 6px 24px;
+  font-weight: 900; font-size: 14px;
+  text-transform: uppercase; letter-spacing: 2px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 15px) 100%, 0 100%);
+}
+
+.dialog-text {
+  font-size: 24px; line-height: 1.6; color: var(--text); margin-top: 15px; min-height: 50px;
+}
+
+.dialog-action {
+  margin-top: 20px; display: flex; justify-content: flex-end;
+  align-items: center; gap: 12px; color: var(--text-sec);
+  font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;
+  border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 15px;
+}
+.ctx-shortcut {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 32px; height: 32px; padding: 0 8px;
+  border: 2px solid #9d4edd;
+  background: rgba(255,107,157,0.08);
+  color: var(--accent6); font-weight: 900; font-size: 12px;
+  letter-spacing: 1px; border-radius: 4px;
+}
+.dialog-choices {
+  margin-top: 20px; display: flex; flex-direction: column; gap: 10px;
+  border-top: 1px dashed #9d4edd; padding-top: 20px;
+}
+.choice-btn {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid #9d4edd;
+  color: var(--text-sec); font-family: var(--font-ui);
+  font-size: 18px; text-align: left;
+  padding: 12px 20px; cursor: pointer;
+  transition: var(--snappy); display: flex; align-items: center; gap: 15px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  border-left: 3px solid transparent;
+}
+.choice-btn:hover {
+  color: var(--text);
+  background: linear-gradient(90deg, rgba(255,107,157,0.12) 0%, transparent 100%);
+  border-left: 3px solid var(--accent6); padding-left: 28px;
+}
+.choice-btn.highlight { color: var(--accent2); }
+.choice-btn.highlight:hover { border-left-color: var(--accent2); }
+.choice-btn.danger { color: #ff3366; }
+.choice-btn.danger:hover { border-left-color: #ff3366; }
+
+#dancefloor-container {
+    display: none;
+    position: fixed; top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: #0a0a14;
+    z-index: 9999;
+}
+#dancefloor-frame { width: 100%; height: 100%; border: none; }
+
+.btn-quitter { 
+    position: absolute; 
+    top: 40px;
+    right: 40px;
+    z-index: 10000; 
+    padding: 15px 30px; 
+    background: var(--accent6); 
+    color: #000;
+    font-weight: 900; 
+    border: none; 
+    cursor: pointer; 
+    text-transform: uppercase;
+}
+</style>
+    <script src="../../shared/debug-tp.js"></script>
+    <script src="../../shared/crystals.js"></script>
+</head>
+<body>
+
+<canvas id="iso-canvas"></canvas>
+
+
+<div id="dialog-overlay">
+  <div class="dialog-box">
+    <div class="dialog-badge" id="dialog-speaker">NPC</div>
+    <p class="dialog-text" id="dialog-text"></p>
+    <div id="dialog-choices" class="dialog-choices" style="display:none"></div>
+    <div class="dialog-action" id="dialog-action">
+      <span>Continuer</span>
+      <span class="ctx-shortcut">ESPACE</span>
+    </div>
+  </div>
+</div>
+
+<script>
+let gameStarted = true; 
+let dialogOpen = false;
+
+function addCrystals(n) {
+  // son ou feedback visuel seulement, pas de compteur
+}
+
+const dlgOverlay = document.getElementById('dialog-overlay');
+const dlgSpeaker = document.getElementById('dialog-speaker');
+const dlgText = document.getElementById('dialog-text');
+const dlgChoices = document.getElementById('dialog-choices');
+const dlgAction = document.getElementById('dialog-action');
+
+let typewriterTimer = null;
+let choiceCount = 0, choiceActions = [];
+
+function typewrite(text, el, onDone) {
+  el.textContent = '';
+  let i = 0;
+  clearInterval(typewriterTimer);
+  typewriterTimer = setInterval(() => {
+    el.textContent += text[i++];
+    if (i >= text.length) { clearInterval(typewriterTimer); if (onDone) onDone(); }
+  }, 25);
+}
+
+function showDialog(speaker, text, choices = null) {
+  dialogOpen = true;
+  dlgSpeaker.textContent = speaker;
+  dlgSpeaker.style.background = speakerColor(speaker);
+  dlgChoices.style.display = 'none';
+  dlgChoices.innerHTML = '';
+  dlgAction.style.display = 'flex';
+  
+  typewrite(text, dlgText, () => {
+    if (choices) {
+      dlgChoices.style.display = 'flex';
+      dlgAction.style.display = 'none';
+      choices.forEach((c, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'choice-btn' + (c.cls ? ' ' + c.cls : '');
+        btn.innerHTML = `<span class="ctx-shortcut">${idx + 1}</span>${c.label}`;
+        btn.onclick = () => { closeDialog(); if (c.action) c.action(); };
+        btn.dataset.actionIdx = idx;
+        btn.onclickAction = c.action; 
+        dlgChoices.appendChild(btn);
+      });
+      choiceCount = choices.length;
+    }
+  });
+  dlgOverlay.classList.add('active');
+}
+
+function closeDialog() {
+  dialogOpen = false;
+  dlgOverlay.classList.remove('active');
+  clearInterval(typewriterTimer);
+  choiceCount = 0; choiceActions = [];
+}
+
+function speakerColor(speaker) {
+  const colors = {
+    'Barman KIMINI': '#9d4edd', 'Kimini Boule': '#9d4edd', 
+    'Kimini DDR': '#9d4edd', 'Kimini Coach': '#9d4edd',
+    'Le Portier': '#9d4edd', 'SYSTÈME': '#9d4edd'
+  };
+  return colors[speaker] || '#9d4edd';
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!dialogOpen) return;
+  if (e.code === 'Space' && choiceCount === 0) { e.preventDefault(); closeDialog(); }
+  if (e.key >= '1' && e.key <= '9') {
+    const idx = parseInt(e.key) - 1;
+    const buttons = dlgChoices.querySelectorAll('button');
+    if (buttons[idx]) { closeDialog(); if (buttons[idx].onclickAction) buttons[idx].onclickAction(); }
+  }
+});
+
+const C = document.getElementById('iso-canvas');
+const ctx = C.getContext('2d');
+
+const TW = 90, TH = 40;
+const ROWS = 7, COLS = 50;
+let camX = 200;
+
+function resizeCanvas() { C.width = window.innerWidth; C.height = window.innerHeight; }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function iso(gx, gy, gz = 0) {
+  const ox = C.width * 0.15;
+  const oy = C.height * 0.45; 
+  return {
+    x: ox + gx * TW + gy * TW * 0.5 - camX,
+    y: oy + gy * TH * 0.5 - gz * TH
+  };
+}
+
+function topFace(gx, gy, gz, fillStyle, stroke_ = 'rgba(0,0,0,0.2)') {
+  const p = iso(gx, gy, gz);
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+  ctx.lineTo(p.x + TW, p.y + TH * 0.5);
+  ctx.lineTo(p.x + TW + TW * 0.5, p.y);
+  ctx.lineTo(p.x + TW * 0.5, p.y - TH * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = fillStyle; ctx.fill();
+  ctx.strokeStyle = stroke_; ctx.lineWidth = 0.4; ctx.stroke();
+}
+
+function box(gx, gy, gz, gw, gd, gh, topC, leftC, rightC) {
+  const tl = iso(gx, gy, gz + gh), tr = iso(gx + gw, gy, gz + gh);
+  const fl_tl = iso(gx, gy + gd, gz + gh), fl_tr = iso(gx + gw, gy + gd, gz + gh);
+  const fl_br = iso(gx + gw, gy + gd, gz), fl_bl = iso(gx, gy + gd, gz);
+  const br = iso(gx + gw, gy, gz);
+
+  ctx.beginPath();
+  ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y);
+  ctx.lineTo(fl_tr.x, fl_tr.y); ctx.lineTo(fl_tl.x, fl_tl.y);
+  ctx.closePath(); ctx.fillStyle = topC; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.5; ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(fl_tl.x, fl_tl.y); ctx.lineTo(fl_tr.x, fl_tr.y);
+  ctx.lineTo(fl_br.x, fl_br.y); ctx.lineTo(fl_bl.x, fl_bl.y);
+  ctx.closePath(); ctx.fillStyle = leftC; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.5; ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(tr.x, tr.y); ctx.lineTo(fl_tr.x, fl_tr.y);
+  ctx.lineTo(fl_br.x, fl_br.y); ctx.lineTo(br.x, br.y);
+  ctx.closePath(); ctx.fillStyle = rightC; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.5; ctx.stroke();
+}
+
+const player = { gx: 2, gy: 3.5, speed: 0.08, bobPhase: 0, facing: 1 };
+const keys = {};
+let nearZone = null;
+
+window.addEventListener('keydown', e => {
+  if (dialogOpen) return;
+  keys[e.key] = true;
+  if ((e.key === 'e' || e.key === 'E') && nearZone) triggerZone(nearZone);
+  if (e.key === 'c' || e.key === 'C') { danceFloorActive = !danceFloorActive; }
+  if (e.key === 'd' || e.key === 'D') { discoOn = !discoOn; }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+const zones = [
+  { id: 'boule', gx: 4, gy: 2, r: 2.5, label: 'Allumer la boule', action: () => { ouvrirBouleDisco(); } },
+  { id: 'piste1', gx: 9, gy: 2, r: 2.8, label: 'Animer la piste', action: () => {
+    showDialog('Kimini Boule', '"La piste est prête ! Tu veux entrer dans la piste ?"', [
+      { label: 'Entrer sur la piste', cls: 'highlight', action: () => { ouvrirDancefloor(); } },
+      { label: 'Rester ici', action: () => { showDialog('Kimini Boule', '"Ok, on reste dans le club ! Reviens quand tu veux."'); } }
+    ]);
+  }},
+  { id: 'ddr', gx: 22, gy: 3, r: 3, label: 'Jouer à Danse Danse Révolution', action: () => {
+    showDialog('Kimini DDR', '"Hé toi ! Tu veux te mesurer à nous ? C\'est un Dance Dance Revolution !"', [
+      { label: '"Oui, j\'essaie !"', cls: 'highlight', action: () => { ouvrirDDR(); } },
+      { label: '"Pas maintenant..."', action: () => { showDialog('Kimini DDR', '"Reviens quand tu es prêt !"'); } }
+    ]);
+  }},
+  { id: 'justdance', gx: 33, gy: 3, r: 3.5, label: 'Zone VIP — Danse!', action: () => {
+    showDialog('Kimini Coach', '"Tu te débrouilles pas si mal ! Ici dans la zone VIP on enchaîne des chorégraphies. Prêt à apprendre de nouveaux pas ?"', [
+      { label: 'Faire les poses', cls: 'highlight', action: () => { ouvrirCoach(); } },
+      { label: 'Faire les mouvements', action: () => { addCrystals(1); ouvrirJustDance(); } },
+      { label: 'Passer...', cls: 'danger', action: () => { showDialog('Kimini Coach', '"Hmm... tu tentes ta chance sans danser. La foule te regarde bizarrement."'); } }
+    ]);
+  }},
+  { id: 'bar', gx: 43, gy: 2.5, r: 3, label: 'Remettre le colis', action: () => {
+    showDialog('Barman KIMINI', '"Enfin te voilà ! J\'attendais ce colis. Pose-le là... En échange, je t\'offre un verre de ma spécialité maison. Tu acceptes ?"', [
+      { label: '"Oui, je prends le verre !"', cls: 'danger', action: () => { invertedControls = true; showDialog('Barman KIMINI', '"Ha ha ha ! Profite bien de la désorientation ! Les boutons sont inversés maintenant, bonne chance pour sortir !"'); } },
+      { label: '"Non merci, je préfère partir."', cls: 'highlight', action: () => { showDialog('Barman KIMINI', '"Sage décision ! La sortie est de l\'autre côté. Reviens quand tu veux, Kimini !"'); } }
+    ]);
+  }},
+  { id: 'exit', gx: 48, gy: 3, r: 2.5, label: 'Quitter la planète', action: () => {
+    showDialog('SYSTÈME', `"Mission accomplie ! Prêt à quitter la planète ?"`, [
+      { label: 'Quitter la planète 🚀', cls: 'highlight', action: () => { if(window.SpaceCrystals)SpaceCrystals.complete('danse'); } },
+      { label: 'Rester et rejouer', action: () => {} }
+    ]);
+  }}
+];
+
+let discoOn = false;
+let danceFloorActive = true;
+let kimimiCount = 3;
+let invertedControls = false;
+
+function triggerZone(z) { z.action(); }
+
+function updatePlayer() {
+  if (dialogOpen) return;
+  const s = player.speed;
+  let dx = 0, dy = 0;
+  const inv = invertedControls ? -1 : 1;
+  if (keys['ArrowLeft'] || keys['a'] || keys['q']) { dx -= s * inv; player.facing = -1; }
+  if (keys['ArrowRight'] || keys['d']) { dx += s * inv; player.facing = 1; }
+  if (keys['ArrowUp'] || keys['w'] || keys['z']) dy -= s * 0.6 * inv;
+  if (keys['ArrowDown'] || keys['s']) dy += s * 0.6 * inv;
+  player.gx = Math.max(1, Math.min(COLS - 2, player.gx + dx));
+  player.gy = Math.max(0.5, Math.min(ROWS - 1, player.gy + dy));
+  if (dx !== 0 || dy !== 0) player.bobPhase += 0.2;
+  const screenX = (player.gx * TW + player.gy * TW * 0.5);
+  const margin = window.innerWidth * 0.45;
+  if (screenX - camX > window.innerWidth - margin) camX = Math.min(COLS * TW * 1.1, camX + ((screenX - camX) - (window.innerWidth - margin)) * 0.1);
+  if (screenX - camX < margin) camX = Math.max(0, camX - (margin - (screenX - camX)) * 0.1);
+  nearZone = null;
+  for (const z of zones) {
+    const dx2 = player.gx - z.gx, dy2 = player.gy - z.gy;
+    if (Math.sqrt(dx2 * dx2 + dy2 * dy2) < z.r) { nearZone = z; break; }
+  }
+}
+
+let frame = 0, neonT = 0, discoAngle = 0;
+
+const kiminiStyles = [
+  { color: '#ff6b9d', hair: '#ff00c8' },
+  { color: '#55efc4', hair: '#00cec9' },
+  { color: '#ff9e7a', hair: '#ffb347' },
+  { color: '#a29bfe', hair: '#6c5ce7' },
+  { color: '#fd79a8', hair: '#e84393' },
+];
+
+function drawKimini(gx, gy, style, animPhase = 0) {
+  const p = iso(gx, gy, 0);
+  const bob = Math.sin(animPhase) * 4;
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(p.x, p.y + 4, 14, 6, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fill();
+  ctx.fillStyle = style.color;
+  ctx.beginPath(); ctx.roundRect(p.x - 9, p.y - 38 + bob, 18, 22, 4); ctx.fill();
+  ctx.fillStyle = '#f8c8a0';
+  ctx.beginPath(); ctx.ellipse(p.x, p.y - 48 + bob, 8, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = style.hair;
+  ctx.beginPath(); ctx.ellipse(p.x, p.y - 53 + bob, 8.5, 5, 0, Math.PI, true); ctx.fill();
+  const armAngle = Math.sin(animPhase * 1.3) * 0.8;
+  ctx.strokeStyle = style.color; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(p.x - 9, p.y - 32 + bob); ctx.lineTo(p.x - 18 + Math.cos(armAngle - 0.5) * 8, p.y - 28 + bob + Math.sin(armAngle) * 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(p.x + 9, p.y - 32 + bob); ctx.lineTo(p.x + 18 + Math.cos(-armAngle + 0.5) * 8, p.y - 28 + bob + Math.sin(-armAngle) * 8); ctx.stroke();
+  ctx.restore();
+}
+
+function drawFloor() {
+  for (let gy = 0; gy < ROWS; gy++) {
+    for (let gx = 0; gx < COLS; gx++) {
+      let col;
+      if (gx >= 5 && gx <= 18) {
+        if (danceFloorActive) {
+          const beat = Math.sin(frame * 0.04 + gx * 0.4 + gy * 0.6);
+          const alt = (gx + gy) % 2;
+          col = alt === 0 ? `rgb(${Math.floor(40 + beat * 20)},0,${Math.floor(60 + beat * 30)})` : `rgb(${Math.floor(20 + beat * 30)},0,${Math.floor(80 + beat * 20)})`;
+        } else { col = '#0c0920'; }
+      } else if (gx >= 19 && gx <= 26) {
+        const beat = Math.abs(Math.sin(frame * 0.07 + gx * 0.5));
+        const colors = ['#ff00c8','#55efc4','#ff9e7a','#a29bfe'];
+        col = `rgba(${parseInt(colors[(gx - 19) % 4].slice(1, 3), 16)},${parseInt(colors[(gx - 19) % 4].slice(3, 5), 16)},${parseInt(colors[(gx - 19) % 4].slice(5, 7), 16)},${0.12 + beat * 0.25})`;
+      } else if (gx >= 27 && gx <= 38) {
+        const beat = Math.sin(frame * 0.035 + gx * 0.3 + gy * 0.5);
+        const alt = (gx + gy + 1) % 2;
+        col = alt === 0 ? `rgb(0,${Math.floor(30 + beat * 20)},${Math.floor(50 + beat * 20)})` : `rgb(0,${Math.floor(50 + beat * 20)},${Math.floor(60 + beat * 25)})`;
+      } else if (gx >= 39) { col = '#120a04'; } 
+      else { col = '#0c0922'; }
+      topFace(gx, gy, 0, col);
+    }
+  }
+}
+
+function drawWalls() {
+  neonT += 0.02;
+  for (let gx = 0; gx < COLS; gx++) {
+    const p0 = iso(gx, 0, 0), p1 = iso(gx + 1, 0, 0);
+    const pt0 = iso(gx, 0, 8), pt1 = iso(gx + 1, 0, 8);
+    ctx.beginPath();
+    ctx.moveTo(pt0.x, pt0.y); ctx.lineTo(pt1.x, pt1.y);
+    ctx.lineTo(p1.x, p1.y); ctx.lineTo(p0.x, p0.y);
+    ctx.closePath(); ctx.fillStyle = '#100d28'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.3; ctx.stroke();
+  }
+  const neonPos = [3,6,9,12,15,19,22,25,28,31,34,37,41,44,47];
+  for (const nx of neonPos) {
+    const isM = nx % 6 === 0;
+    const flk = 0.65 + 0.35 * Math.sin(neonT * 5 + nx * 0.7);
+    const col = isM ? `rgba(255,0,200,${flk})` : `rgba(85,239,196,${flk})`;
+    const pa = iso(nx, 0, 6.5), pb = iso(nx + 1, 0, 6.5);
+    ctx.save();
+    ctx.shadowColor = isM ? '#ff00c8' : '#55efc4'; ctx.shadowBlur = 14 * flk;
+    ctx.strokeStyle = col; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke(); 
+    ctx.restore();
+  }
+  for (let gy = 0; gy < ROWS; gy++) {
+    const p0 = iso(0, gy, 0), p1 = iso(0, gy + 1, 0);
+    const pt0 = iso(0, gy, 8), pt1 = iso(0, gy + 1, 8);
+    ctx.beginPath();
+    ctx.moveTo(pt0.x, pt0.y); ctx.lineTo(pt1.x, pt1.y);
+    ctx.lineTo(p1.x, p1.y); ctx.lineTo(p0.x, p0.y);
+    ctx.closePath(); ctx.fillStyle = '#0d0b22'; ctx.fill();
+  }
+}
+
+function drawEntrance() {
+  const door = iso(0, 3, 0);
+  ctx.save();
+  ctx.shadowColor = '#ff00c8'; ctx.shadowBlur = 30;
+  ctx.strokeStyle = 'rgba(255,0,200,0.6)'; ctx.lineWidth = 2.5;
+  ctx.strokeRect(door.x - 5, door.y - 60, 22, 60);
+  ctx.restore();
+}
+
+function drawGiantSpeakers() {
+  box(1, 0, 0, 1.5, 1.2, 6, '#0d0d0d', '#090909', '#070707');
+  box(3, 0, 0, 1.5, 1.2, 6, '#0d0d0d', '#090909', '#070707');
+  for (const sx of [1.75, 3.75]) {
+    for (const sz of [1.5, 3.5]) {
+      const s = iso(sx, 0.6, sz);
+      ctx.save();
+      ctx.shadowColor = '#ff00c8'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 16, 0, Math.PI * 2);
+      ctx.fillStyle = '#1a0030'; ctx.fill();
+      ctx.strokeStyle = '#660044'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(s.x, s.y, 8, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,0,200,${0.3 + Math.sin(frame * 0.08 + sx) * 0.3})`; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function drawDiscoBall() {
+  discoAngle += 0.02;
+  const top = iso(10.5, 1, 10), ball = iso(10.5, 1, 7);
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(ball.x, ball.y); ctx.stroke();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, discoOn ? 20 : 14, 0, Math.PI * 2);
+  const grad = ctx.createRadialGradient(ball.x - 5, ball.y - 5, 2, ball.x, ball.y, discoOn ? 20 : 14);
+  grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#aaaaaa');
+  ctx.fillStyle = grad; ctx.fill();
+  if (discoOn) {
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2 + discoAngle;
+      const fx = ball.x + Math.cos(a) * 13, fy = ball.y + Math.sin(a) * 8;
+      ctx.fillStyle = `hsl(${(i * 15 + frame * 3) % 360},100%,65%)`;
+      ctx.fillRect(fx - 3, fy - 2, 6, 4);
+    }
+  }
+  ctx.restore();
+}
+
+function drawDDRZone() {
+  // 1. Dessin de la borne d'arcade DDR (gx = 23)
+  box(23, 0, 0, 3, 1, 5, '#2a0550', '#1a0340', '#110230');
+  
+  // Coordonnées pour l'écran de la borne
+  const dm = iso(24.5, 0.5, 4);
+  
+  // --- ÉCRAN LUMINEUX VIDE ---
+  ctx.save();
+  // Effet de néon rétroéclairé bleu/cyan autour de l'écran
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#050015'; 
+  ctx.fillRect(dm.x - 35, dm.y - 35, 70, 50); // Taille de l'écran
+  ctx.strokeStyle = '#3a0ca3'; ctx.lineWidth = 2;
+  ctx.strokeRect(dm.x - 35, dm.y - 35, 70, 50);
+  
+  // Lignes de grille discrètes en arrière-plan pour donner un style "rétro/cyber"
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.lineWidth = 1;
+  for (let l = -25; l <= 25; l += 16) {
+    ctx.beginPath();
+    ctx.moveTo(dm.x + l, dm.y - 35);
+    ctx.lineTo(dm.x + l, dm.y + 15);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // --- TAPIS DE FLÈCHES AU SOL (PLUS BAS) ---
+  const floorArrows = [
+    {dx: 0.5, dy: 1.4, sym: '▲', color: '#ff00c8'},
+    {dx: 1.5, dy: 2.1, sym: '◀', color: '#55efc4'},
+    {dx: 2.5, dy: 1.4, sym: '▶', color: '#ff9e7a'},
+    {dx: 1.5, dy: 0.7, sym: '▼', color: '#ff6b9d'},
+  ];
+
+  for (const a of floorArrows) {
+    const beat = Math.abs(Math.sin(frame * 0.07 + a.dx + a.dy));
+    const p = iso(23 + a.dx, a.dy + 1.6, 0.08); 
+    
+    ctx.save();
+    ctx.shadowColor = a.color; 
+    ctx.shadowBlur = 20 * beat;
+    ctx.fillStyle = a.color; 
+    
+    ctx.font = `bold ${32 + beat * 6}px monospace`;
+    ctx.textAlign = 'center'; 
+    ctx.textBaseline = 'middle';
+    
+    ctx.fillText(a.sym, p.x, p.y);
+    ctx.restore();
+  }
+}
+
+function drawVIPZone() {
+  box(32, 0, 0, 3, 0.5, 5.5, '#1a1a1a', '#111', '#0d0d0d');
+
+  // Rideau velours VIP (2 pans)
+  for (let i = 0; i < 3; i++) {
+    const rp = iso(32, 0, 5 - i * 1.5);
+    ctx.save();
+    ctx.fillStyle = `rgba(80,0,40,${0.7 - i * 0.15})`;
+    ctx.beginPath();
+    ctx.moveTo(rp.x, rp.y);
+    ctx.lineTo(rp.x + 10, rp.y + 5);
+    ctx.lineTo(rp.x + 8, rp.y + 30);
+    ctx.lineTo(rp.x - 2, rp.y + 25);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Panneau "VIP" sur la borne
+  const vipSign = iso(33.5, 0, 5);
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.9)';
+  ctx.fillRect(vipSign.x - 20, vipSign.y - 14, 40, 20);
+  ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1;
+  ctx.strokeRect(vipSign.x - 20, vipSign.y - 14, 40, 20);
+  ctx.fillStyle = '#ffd700'; ctx.font = 'bold 10px Montserrat'; ctx.textAlign = 'center';
+  ctx.fillText('V I P', vipSign.x, vipSign.y);
+  ctx.restore();
+
+  // Velvet rope (corde d'exclusion)
+  const rp1 = iso(31.5, 1, 0.5), rp2 = iso(35.5, 1, 0.5);
+  ctx.save();
+  ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(rp1.x, rp1.y);
+  for (let t = 0; t <= 1; t += 0.05) {
+    const mx = rp1.x + (rp2.x - rp1.x) * t;
+    const my = rp1.y + (rp2.y - rp1.y) * t + Math.sin(t * Math.PI * 3) * 4;
+    ctx.lineTo(mx, my);
+  }
+  ctx.stroke();
+  // Poteaux
+  ctx.fillStyle = '#b8860b';
+  ctx.fillRect(rp1.x - 3, rp1.y - 18, 6, 18);
+  ctx.fillRect(rp2.x - 3, rp2.y - 18, 6, 18);
+  ctx.restore();
+}
+
+function drawSofasAndBar() {
+  // Canapé
+  box(38, 4, 0, 3, 1, 2, '#5a0030', '#3d0020', '#2d0018');
+  box(38, 5, 0, 3, 1, 1, '#7a0040', '#5a0030', '#400020');
+
+  // Table basse devant canapé
+  box(38.5, 3.2, 0, 2, 0.5, 0.6, '#2a1a00', '#1e1200', '#160d00');
+
+  // Verres sur la table basse
+  const glassTbl = iso(39, 3.4, 0.6);
+  ctx.save();
+  ctx.fillStyle = 'rgba(180,230,255,0.6)';
+  ctx.beginPath(); ctx.ellipse(glassTbl.x, glassTbl.y, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(180,230,255,0.9)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(glassTbl.x, glassTbl.y); ctx.lineTo(glassTbl.x, glassTbl.y - 12); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(glassTbl.x, glassTbl.y - 12, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+  const glassTbl2 = iso(39.5, 3.5, 0.6);
+  ctx.fillStyle = 'rgba(255,100,100,0.5)';
+  ctx.beginPath(); ctx.ellipse(glassTbl2.x, glassTbl2.y, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,100,100,0.8)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(glassTbl2.x, glassTbl2.y); ctx.lineTo(glassTbl2.x, glassTbl2.y - 12); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(glassTbl2.x, glassTbl2.y - 12, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Bar 
+  box(42, 0, 0, 6, 1.5, 2.5, '#1e1000', '#140b00', '#0e0800');
+
+  // Étagères bouteilles sur le mur du bar
+  const shelfColors = ['#8B0000','#006400','#00008B','#8B6914','#4B0082','#8B4513'];
+  for (let i = 0; i < 6; i++) {
+    const bp = iso(42.5 + i * 0.85, 0, 3.5 + (i % 2) * 0.8);
+    ctx.save();
+    // Corps bouteille
+    ctx.fillStyle = shelfColors[i];
+    ctx.fillRect(bp.x - 4, bp.y - 22, 8, 16);
+    // Col bouteille
+    ctx.fillRect(bp.x - 2, bp.y - 30, 4, 10);
+    // Bouchon
+    ctx.fillStyle = '#ddd';
+    ctx.fillRect(bp.x - 2, bp.y - 32, 4, 4);
+    // Reflet
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(bp.x - 2, bp.y - 28, 2, 12);
+    ctx.restore();
+  }
+
+  // Comptoir lumineux (barre LED sous le bar)
+  const barLedT = frame * 0.03;
+  for (let i = 0; i < 6; i++) {
+    const lp = iso(42.2 + i * 0.9, 1.5, 2.4);
+    ctx.save();
+    ctx.shadowColor = `hsl(${(i * 40 + frame * 2) % 360},100%,60%)`;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = `hsl(${(i * 40 + frame * 2) % 360},100%,60%)`;
+    ctx.fillRect(lp.x - 3, lp.y, 6, 3);
+    ctx.restore();
+  }
+
+  // Tabourets de bar
+  for (let i = 0; i < 4; i++) {
+    const stool = iso(43 + i * 1.1, 2, 0);
+    ctx.save();
+    // Pied
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(stool.x, stool.y); ctx.lineTo(stool.x, stool.y - 22); ctx.stroke();
+    // Assise
+    ctx.fillStyle = '#3d0020';
+    ctx.beginPath(); ctx.ellipse(stool.x, stool.y - 22, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#7a0040'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+
+  // Barman kimini
+  drawKimini(44, 0.5, { color: '#ff6b9d', hair: '#ff00c8' }, frame * 0.05);
+
+  // Plante déco près du canapé
+  const plant = iso(41, 4.5, 0);
+  ctx.save();
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.ellipse(plant.x, plant.y, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a5c00';
+  ctx.beginPath(); ctx.arc(plant.x, plant.y - 14, 10, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#22770a';
+  ctx.beginPath(); ctx.arc(plant.x - 7, plant.y - 10, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(plant.x + 7, plant.y - 10, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Miroir mural au bar
+  const mirror = iso(42, 0, 5);
+  ctx.save();
+  ctx.fillStyle = 'rgba(150,200,255,0.08)';
+  ctx.fillRect(mirror.x - 2, mirror.y - 40, 60, 40);
+  ctx.strokeStyle = 'rgba(200,180,100,0.6)'; ctx.lineWidth = 2;
+  ctx.strokeRect(mirror.x - 2, mirror.y - 40, 60, 40);
+  // Reflet lumineux sur le miroir
+  ctx.fillStyle = `rgba(255,255,255,${0.02 + Math.sin(frame * 0.02) * 0.01})`;
+  ctx.fillRect(mirror.x - 2, mirror.y - 40, 60, 40);
+  ctx.restore();
+
+  // Petite plante entrée (zone 2,1)
+  const plant2 = iso(2, 1, 0);
+  ctx.save();
+  ctx.fillStyle = '#2d1a00';
+  ctx.beginPath(); ctx.ellipse(plant2.x, plant2.y, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a5c00';
+  ctx.beginPath(); ctx.arc(plant2.x, plant2.y - 12, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#22770a';
+  ctx.beginPath(); ctx.arc(plant2.x - 6, plant2.y - 8, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(plant2.x + 6, plant2.y - 8, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Colis (existant mais rendu visible)
+  box(2, 1, 0, 0.6, 0.6, 1.2, '#b57edc', '#9b59b6', '#8e44ad');
+  box(2.1, 1.1, 1.2, 0.4, 0.4, 0.4, '#ffccac', '#e0a986', '#c69273');
+}
+
+function drawExit() {
+  const exitP = iso(COLS - 1, 3, 0);
+  ctx.save();
+  ctx.shadowColor = '#55efc4'; ctx.shadowBlur = 25;
+  ctx.strokeStyle = 'rgba(85,239,196,0.7)'; ctx.lineWidth = 3;
+  ctx.strokeRect(exitP.x - 4, exitP.y - 65, 24, 65);
+  ctx.restore();
+}
+
+function drawDancingKiminis() {
+  // --- 1. PISTE DE DANSE PRINCIPALE (Existant) ---
+  const positions = [ {gx: 7, gy: 2.5}, {gx: 9, gy: 4}, {gx: 11, gy: 2.5}, {gx: 13, gy: 3.5}, {gx: 15, gy: 3} ];
+  for (let i = 0; i < Math.min(kimimiCount, positions.length); i++) {
+    const pos = positions[i];
+    drawKimini(pos.gx, pos.gy, kiminiStyles[i % kiminiStyles.length], frame * 0.08 + i * 1.2);
+  }
+
+  // --- 2. ZONE VIP (Existant) ---
+  const vipPos = [{gx:29,gy:2.5},{gx:31,gy:3.5},{gx:33.5,gy:2},{gx:36,gy:3}];
+  for (let i = 0; i < vipPos.length; i++) {
+    const pos = vipPos[i];
+    drawKimini(pos.gx, pos.gy, kiminiStyles[(i + 2) % kiminiStyles.length], frame * 0.06 + i * 2.1);
+  }
+
+  // --- 3. NOUVEAUX BONHOMMES (Remplissage des zones vides) ---
+  const newPositions = [
+    // Près de l'entrée et des enceintes géantes (Zone de gauche)
+    {gx: 2, gy: 5.5}, 
+    {gx: 4.5, gy: 4.5},
+    
+    // Zone intermédiaire vide (Entre la piste principale et la zone DDR)
+    {gx: 17.5, gy: 2},
+    {gx: 18.5, gy: 5},
+    
+    // Zone vide au milieu (Entre la zone DDR et la zone VIP)
+    {gx: 27, gy: 1.5},
+    {gx: 27.5, gy: 4.5},
+    
+    // Près des canapés et en face du comptoir du bar (Zone de droite)
+    {gx: 40, gy: 2},
+    {gx: 41, gy: 5.5},
+    {gx: 46, gy: 4}
+  ];
+
+  for (let i = 0; i < newPositions.length; i++) {
+    const pos = newPositions[i];
+    // Sélection d'un style de couleur et d'une vitesse d'animation légèrement désynchronisée
+    let styleIndex = (i + 4) % kiminiStyles.length;
+    let animSpeed = frame * 0.05 + i * 0.8;
+    
+    drawKimini(pos.gx, pos.gy, kiminiStyles[styleIndex], animSpeed);
+  }
+}
+
+function drawHangingLights() {
+  const lightX = [5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45];
+  for (const lx of lightX) {
+    const lp = iso(lx, 1.5, 8.5), lt = iso(lx, 1.5, 10);
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(lt.x, lt.y); ctx.lineTo(lp.x, lp.y); ctx.stroke();
+
+    // ✅ NOUVEAU — Ampoule visible en bout de fil
+    ctx.save();
+    ctx.shadowColor = `hsl(${(lx * 20 + frame) % 360},100%,70%)`;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = `hsl(${(lx * 20 + frame) % 360},100%,70%)`;
+    ctx.beginPath(); ctx.arc(lp.x, lp.y, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ✅ NOUVEAU — Spots au plafond (faisceaux lumineux sur la piste)
+function drawSpotlights() {
+  const spotPositions = [6, 10, 14];
+  for (const sx of spotPositions) {
+    const sp = iso(sx, 1, 9);
+    const fp = iso(sx + 1, 3, 0);
+    const hue = (sx * 30 + frame * 1.5) % 360;
+    const alpha = 0.04 + Math.abs(Math.sin(frame * 0.03 + sx)) * 0.04;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(sp.x, sp.y);
+    ctx.lineTo(fp.x - 20, fp.y);
+    ctx.lineTo(fp.x + 20, fp.y);
+    ctx.closePath();
+    ctx.fillStyle = `hsla(${hue},100%,60%,${alpha})`;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawPlayer() {
+  const p = iso(player.gx, player.gy, 0);
+  const bob = Math.sin(player.bobPhase) * 6; // Oscillation verticale encore plus fluide
+  
+  ctx.save();
+  
+  // 1. OMBRE AU SOL (Élargie pour correspondre à sa carrure)
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y + 6, 30, 11, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fill();
+
+  // 2. JAMBES CYBER GIANTES
+  ctx.fillStyle = '#281e64'; // Jambe arrière
+  ctx.fillRect(p.x - 20, p.y - 20 + bob * 0.5, 10, 20);
+  ctx.fillStyle = '#ff7800'; // Lueur orange
+  ctx.fillRect(p.x - 20, p.y - 10 + bob * 0.5, 10, 4);
+
+  ctx.fillStyle = '#281e64'; // Jambe avant
+  ctx.fillRect(p.x + 10, p.y - 20 + bob * 0.5, 10, 20);
+  ctx.fillStyle = '#00dcc8'; // Lueur cyan
+  ctx.fillRect(p.x + 10, p.y - 10 + bob * 0.5, 10, 4);
+
+  // Énormes Bottes de Jaxx
+  ctx.fillStyle = '#e6e8ee';
+  ctx.fillRect(p.x - 24, p.y - 2, 15, 9);
+  ctx.fillStyle = '#140f2d';
+  ctx.fillRect(p.x + 9, p.y - 2, 15, 9);
+
+  // 3. TORSE CYBER-ARMURE IMPOSANT
+  ctx.fillStyle = '#00465a'; // Armure principale
+  ctx.fillRect(p.x - 26, p.y - 60 + bob, 52, 40);
+  
+  // Plaque pectorale centrale lumineuse
+  ctx.fillStyle = '#00c8ff';
+  ctx.fillRect(p.x - 5, p.y - 54 + bob, 10, 26);
+  
+  // Bandes lumineuses de l'armure (Néon Rose et Cyan)
+  ctx.fillStyle = '#ff00c8';
+  ctx.fillRect(p.x - 21, p.y - 50 + bob, 4, 20);
+  ctx.fillStyle = '#00dcc8';
+  ctx.fillRect(p.x + 17, p.y - 50 + bob, 4, 20);
+
+  // 4. CORE AMPLIFICATEUR (Subwoofer ventral massif)
+  let corePulse = Math.sin(frame * 0.15) * 3;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y - 40 + bob, 13 + corePulse * 0.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#0a0c10';
+  ctx.fill();
+  ctx.strokeStyle = '#ff00c8';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  
+  // Cœur du réacteur scintillant
+  ctx.beginPath();
+  ctx.arc(p.x, p.y - 40 + bob, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#00f0ff';
+  ctx.fill();
+
+  // 5. LES BRAS MAJESTUEUX AVEC GANTELET ET CONSOLE DJ
+  // Bras Gauche + Gantelet Cyber (Avec mini pads musicaux)
+  ctx.fillStyle = '#004155';
+  ctx.fillRect(p.x - 37, p.y - 56 + bob, 11, 22);
+  ctx.fillStyle = '#19202d'; // Gantelet
+  ctx.fillRect(p.x - 41, p.y - 40 + bob, 15, 16);
+  // Micro pads de couleurs sur le gantelet
+  ctx.fillStyle = '#00ffff'; ctx.fillRect(p.x - 38, p.y - 36 + bob, 4, 4);
+  ctx.fillStyle = '#ff00ff'; ctx.fillRect(p.x - 33, p.y - 36 + bob, 4, 4);
+  ctx.fillStyle = '#00ff64'; ctx.fillRect(p.x - 38, p.y - 30 + bob, 4, 4);
+
+  // Bras Droit
+  ctx.fillStyle = '#004155';
+  ctx.fillRect(p.x + 26, p.y - 56 + bob, 11, 22);
+
+  // LE DECK DE DJ LARGE (Console de mixage spatiale)
+  ctx.fillStyle = '#191e28';
+  ctx.fillRect(p.x - 14, p.y - 32 + bob, 38, 14);
+  // Boutons lumineux sur la console
+  ctx.fillStyle = '#00ffff'; ctx.fillRect(p.x - 9, p.y - 28 + bob, 5, 4);
+  ctx.fillStyle = '#ff00ff'; ctx.fillRect(p.x, p.y - 28 + bob, 4, 4);
+  ctx.fillStyle = '#00ff64'; ctx.fillRect(p.x + 6, p.y - 28 + bob, 5, 4);
+
+  // 6. TÊTE & CASQUE AUDIO GRAND FORMAT
+  ctx.fillStyle = '#5f4c40'; // Peau marron/brune
+  ctx.fillRect(p.x - 16, p.y - 90 + bob, 32, 30);
+  
+  // Visière / Yeux Cyber Lumineux (Bleu Cyan)
+  ctx.fillStyle = '#00e6ff';
+  ctx.fillRect(p.x - 11, p.y - 80 + bob, 9, 6);
+  ctx.fillRect(p.x + 2, p.y - 80 + bob, 9, 6);
+  
+  // Tatouages Faciaux Égaliseurs (Sur les côtés des joues)
+  let eqH1 = Math.abs(Math.sin(frame * 0.2)) * 14;
+  let eqH2 = Math.abs(Math.cos(frame * 0.15)) * 14;
+  ctx.fillStyle = '#00c8ff'; // Égaliseur gauche
+  ctx.fillRect(p.x - 14.5, p.y - 70 + bob - eqH1 * 0.5, 2.5, eqH1);
+  ctx.fillStyle = '#ff00c8'; // Égaliseur droite
+  ctx.fillRect(p.x + 12, p.y - 70 + bob - eqH2 * 0.5, 2.5, eqH2);
+
+  // Casque audio néon au-dessus des yeux
+  ctx.fillStyle = 'rgba(180, 0, 255, 0.7)';
+  ctx.fillRect(p.x - 18, p.y - 86 + bob, 36, 6);
+
+  // 7. SENSASSIONNELLE CHEVELURE CYBERPUNK (Mèches et pointes néon)
+  const hairY = p.y - 90 + bob;
+  const hairWave = Math.sin(frame * 0.1) * 4;
+  
+  ctx.fillStyle = '#16100c'; // Base brune très foncée
+  ctx.fillRect(p.x - 20, hairY, 5, 16);
+  ctx.fillRect(p.x + 15, hairY, 5, 16);
+  ctx.fillRect(p.x - 6, hairY - 6, 12, 6);
+
+  // Pointes des cheveux néon réactives (Grosses billes lumineuses)
+  ctx.beginPath();
+  ctx.arc(p.x - 17.5, hairY + 16 + hairWave, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ff14d0';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(p.x + 17.5, hairY + 16 - hairWave, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#9b5de5';
+  ctx.fill();
+  
+  ctx.restore();
+
+  // --- INTERACTIONS & UI AU-DESSUS DE LA TÊTE (Placée plus haut pour ne pas masquer le casque) ---
+  if (nearZone && !dialogOpen) {
+    ctx.save();
+    const label = `[ E ] ${nearZone.label}`;
+    ctx.font = 'bold 12px Inter';
+    const tw = ctx.measureText(label).width + 22;
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.beginPath(); 
+    ctx.roundRect(p.x - tw / 2, p.y - 135 + bob, tw, 26, 4); 
+    ctx.fill();
+    ctx.strokeStyle = '#ff6b9d'; 
+    ctx.lineWidth = 1; 
+    ctx.stroke();
+    ctx.fillStyle = '#ff6b9d'; 
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, p.x, p.y - 122 + bob);
+    ctx.restore();
+  }
+
+  if (invertedControls) {
+    ctx.save(); 
+    ctx.fillStyle = 'rgba(255,51,102,0.9)'; 
+    ctx.font = 'bold 10px Inter'; 
+    ctx.textAlign = 'center';
+    ctx.fillText('CONTRÔLES INVERSÉS', p.x, p.y - 150 + bob); 
+    ctx.restore();
+  }
+}
+
+setTimeout(() => {
+  showDialog('Le Portier', '"Bienvenue sur la planète Night Dance. Le barman de la Kimini Party t\'attend au fond du club. Seul le rythme te mènera à la sortie. Bonne chance, Kimini ! N\'oublie pas que des cristaux t\'attendent."');
+}, 500);
+
+function gameLoop() {
+  frame++;
+  updatePlayer();
+  
+  ctx.fillStyle = '#050210';
+  ctx.fillRect(0, 0, C.width, C.height);
+  
+  const bgGrad = ctx.createLinearGradient(0, 0, C.width, 0);
+  bgGrad.addColorStop(0, 'rgba(20,0,40,0.4)');
+  bgGrad.addColorStop(0.3, 'rgba(10,0,30,0.2)');
+  bgGrad.addColorStop(0.7, 'rgba(0,10,30,0.2)');
+  bgGrad.addColorStop(1, 'rgba(10,20,10,0.3)');
+  ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, C.width, C.height);
+
+  drawWalls();
+  drawFloor();
+  drawSpotlights();
+  drawHangingLights();
+  drawGiantSpeakers();
+  drawDiscoBall();
+  drawDDRZone();
+  drawVIPZone();
+  drawSofasAndBar();
+  drawExit();
+  drawDancingKiminis();
+  drawPlayer();
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop(); // ← en premier
+
+// Musique après
+const music = document.getElementById('bg-music');
+music.volume = 0.3;
+document.addEventListener('click', () => music.play(), { once: true });
+document.addEventListener('keydown', () => music.play(), { once: true });
+</script>
+
+<script>
+let ddrAlreadyPlayed = false;
+
+function ouvrirBouleDisco() {
+    const frame = document.getElementById('dancefloor-frame');
+    frame.src = "interactions/bouleDisco.html"; 
+    document.getElementById('dancefloor-container').style.display = 'block';
+}
+
+function ouvrirDancefloor() {
+    const frame = document.getElementById('dancefloor-frame');
+    frame.src = "interactions/interaction1.html"; 
+    document.getElementById('dancefloor-container').style.display = 'block';
+}
+
+function ouvrirDDR() {
+    if (ddrAlreadyPlayed) { alert("Tu as déjà relevé le défi DDR !"); return; }
+    const frame = document.getElementById('dancefloor-frame');
+    frame.src = "interactions/interaction2.html"; 
+    document.getElementById('dancefloor-container').style.display = 'block';
+}
+
+function ouvrirCoach() {
+    const frame = document.getElementById('dancefloor-frame');
+    frame.src = "interactions/interaction3.html"; 
+    document.getElementById('dancefloor-container').style.display = 'block';
+}
+
+function ouvrirJustDance() {
+  const frame = document.getElementById('dancefloor-frame');
+    frame.src = "interactions/dance.html"; 
+    document.getElementById('dancefloor-container').style.display = 'block';
+}
+
+function quitterDancefloor() {
+    const frame = document.getElementById('dancefloor-frame');
+    if (frame.src.includes("interaction2.html")) ddrAlreadyPlayed = true;
+    document.getElementById('dancefloor-container').style.display = 'none';
+    frame.src = "about:blank"; 
+}
+</script>
+
+<div id="dancefloor-container">
+    <iframe id="dancefloor-frame" src="" allow="microphone *; autoplay *; camera *"></iframe>
+    <button class="btn-quitter" onclick="quitterDancefloor()">Quitter</button>
+</div>
+
+</body>
+</html>

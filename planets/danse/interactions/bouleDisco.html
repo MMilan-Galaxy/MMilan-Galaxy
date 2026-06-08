@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Disco Ball - Clap Detection</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"></script>
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+    canvas { display: block; }
+    .ui-container {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      padding: 20px;
+      box-sizing: border-box;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+    .left-btns {
+      position: fixed;
+      left: 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .indication {
+      color: rgba(255,255,255,0.85);
+      font-size: 17px;
+      background-color: rgba(0,0,0,0.65);
+      padding: 10px 20px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.2);
+      letter-spacing: 1px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity:0.6; }
+      50% { opacity:1; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+      100% { opacity:0.6; }
+    }
+    #mic-btn {
+      background-color: rgba(255,255,255,0.15);
+      color: white;
+      border: 2px solid white;
+      padding: 10px 22px;
+      font-size: 15px;
+      font-weight: bold;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      pointer-events: auto;
+    }
+    #mic-btn:hover {
+      background-color: white;
+      color: black;
+      box-shadow: 0 0 15px rgba(255,255,255,0.7);
+    }
+    #mic-btn.active {
+      background-color: rgba(0,255,150,0.25);
+      border-color: #00ff96;
+      color: #00ff96;
+      box-shadow: 0 0 12px rgba(0,255,150,0.4);
+    }
+  </style>
+</head>
+<body tabindex="0">
+
+<div class="ui-container">
+  <div class="left-btns"></div>
+  <div style="display:flex; flex-direction:column; align-items:flex-start; gap:10px;">
+    <div class="indication">Allume le micro et claque des mains pour activer la boule de disco !</div>
+    <button id="mic-btn">🎤 Activer le micro</button>
+  </div>
+</div>
+
+<script>
+let myDiscoBall, facadeTexture;
+let isRotating = false;
+let rotationAngle = 0;
+let particles = [];
+
+let audioCtx = null;
+let analyser = null;
+let micStream = null;
+let dataArray = null;
+let micActive = false;
+
+let lastClapTime = 0;
+let clapCooldown = 600;
+let energyHistory = [];
+let historySize = 30;
+
+const micBtn = document.getElementById('mic-btn');
+
+document.body.focus();
+
+document.body.addEventListener('keydown', function(e) {
+  if (e.key === 'd' || e.key === 'D') {
+    isRotating = !isRotating;
+  }
+});
+
+micBtn.addEventListener('click', async () => {
+  if (!micActive) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      micStream = stream;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      dataArray = new Uint8Array(analyser.fftSize);
+      micActive = true;
+      micBtn.textContent = '🎙️ Micro actif';
+      micBtn.classList.add('active');
+    } catch(e) {
+      micBtn.textContent = '❌ Micro refusé';
+    }
+  } else {
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    if (audioCtx) audioCtx.close();
+    micActive = false;
+    analyser = null;
+    dataArray = null;
+    micBtn.textContent = '🎤 Activer le micro';
+    micBtn.classList.remove('active');
+  }
+});
+
+function detectClap() {
+  if (!micActive || !analyser) return;
+  analyser.getByteTimeDomainData(dataArray);
+  let sum = 0;
+  for (let i = 0; i < dataArray.length; i++) {
+    let v = (dataArray[i] - 128) / 128;
+    sum += v * v;
+  }
+  let rms = Math.sqrt(sum / dataArray.length);
+
+  energyHistory.push(rms);
+  if (energyHistory.length > historySize) energyHistory.shift();
+
+  let avg = energyHistory.reduce((a,b) => a+b, 0) / energyHistory.length;
+  let now = Date.now();
+
+  if (rms > avg * 3.5 && rms > 0.12 && (now - lastClapTime) > clapCooldown) {
+    lastClapTime = now;
+    isRotating = !isRotating;
+  }
+}
+
+new p5(function(p) {
+  p.setup = function() {
+    p.createCanvas(window.innerWidth, window.innerHeight, p.WEBGL);
+    // Empêcher le canvas de prendre le focus
+    p.canvas.setAttribute('tabindex', '-1');
+    p.canvas.blur();
+    document.body.focus();
+
+    let texSize = 512;
+    facadeTexture = p.createGraphics(texSize, texSize);
+    facadeTexture.background(100);
+    let res = 20;
+    let tileSize = texSize / res;
+    for (let x = 0; x < texSize; x += tileSize) {
+      for (let y = 0; y < texSize; y += tileSize) {
+        facadeTexture.stroke(40);
+        facadeTexture.fill(p.random(140, 180));
+        facadeTexture.rect(x, y, tileSize, tileSize);
+      }
+    }
+
+    myDiscoBall = { x: 0, y: -p.height/3, z: 0, radius: 150 };
+    for (let i = 0; i < 250; i++) particles.push(new ReflectionDot(p));
+  };
+
+  p.draw = function() {
+    detectClap();
+    p.background(0);
+
+    if (isRotating) {
+      p.ambientLight(60);
+      p.pointLight(150, 150, 200, 0, 400, 200);
+      p.pointLight(255, 255, 255, 0, -500, 100);
+      p.spotLight(255, 0, 200, 600, -600, 400, -1, 1, -1, p.PI/3, 1);
+      p.spotLight(0, 255, 255, -600, -600, 400, 1, 1, -1, p.PI/3, 1);
+      p.spotLight(255, 255, 255, 0, 0, 800, 0, 0, -1, p.PI/2, 2);
+      drawEnvironment(p);
+      rotationAngle += 0.01;
+    } else {
+      p.ambientLight(30);
+      p.directionalLight(100, 100, 110, -1, 1, -0.5);
+      p.pointLight(80, 80, 100, 0, 300, 100);
+    }
+
+    drawAttachment(p);
+
+    p.push();
+    p.translate(0, -p.height/4.2, 0);
+    p.rotateY(rotationAngle);
+    p.specularMaterial(255);
+    p.shininess(150);
+    p.texture(facadeTexture);
+    p.noStroke();
+    p.sphere(150, 64, 64);
+    p.pop();
+  };
+
+  p.windowResized = function() {
+    p.resizeCanvas(window.innerWidth, window.innerHeight);
+  };
+});
+
+function drawAttachment(p) {
+  p.push();
+  p.stroke(100);
+  p.strokeWeight(2);
+  p.line(0, -p.height, 0, 0, -p.height/4 - 150, 0);
+  p.translate(0, -p.height/4 - 155, 0);
+  p.fill(80);
+  p.noStroke();
+  p.cylinder(10, 15);
+  p.pop();
+}
+
+function drawEnvironment(p) {
+  p.push();
+  p.translate(0, p.height, 0);
+  p.rotateX(p.HALF_PI);
+  p.noStroke();
+  p.fill(20);
+  p.plane(4000, 4000);
+  p.pop();
+
+  p.noStroke();
+  particles.forEach(pt => {
+    pt.update(rotationAngle);
+    pt.display(p);
+  });
+}
+
+class ReflectionDot {
+  constructor(p) {
+    this.p = p;
+    this.angle = p.random(p.TWO_PI);
+    this.radius = p.random(200, 1200);
+    this.y = p.random(-p.height, p.height);
+    this.size = p.random(2, 8);
+    this.col = p.color(p.random([255,100]), p.random([255,200]), 255, p.random(100,200));
+  }
+  update(rot) { this.currentAngle = this.angle + rot * 2.5; }
+  display(p) {
+    let x = Math.cos(this.currentAngle) * this.radius;
+    let z = Math.sin(this.currentAngle) * this.radius;
+    p.push();
+    p.translate(x, this.y, z);
+    p.fill(this.col);
+    p.ellipse(0, 0, this.size, this.size);
+    p.pop();
+  }
+}
+</script>
+</body>
+</html>

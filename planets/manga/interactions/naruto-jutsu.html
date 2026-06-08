@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Naruto — Jutsu de Konoha</title>
+<script src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing: border-box; user-select: none; }
+  body { background: #050300; overflow: hidden; height: 100vh; font-family: 'Inter', sans-serif; color: #fff; }
+  #v_src, #out {
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+    object-fit: cover; transform: scaleX(-1);
+  }
+  #out { z-index: 2; pointer-events: none; }
+  .darkness {
+    position: absolute; inset: 0; background: rgba(10, 5, 0, 0.3);
+    mix-blend-mode: multiply; pointer-events: none; z-index: 5;
+  }
+  .fx {
+    position: absolute; height: auto; top: 0; left: 0;
+    transform: translate(-50%, -50%);
+    pointer-events: none; display: none;
+    mix-blend-mode: screen; z-index: 20;
+  }
+  #n { width: min(1600px, 90vw); }
+  #s { width: min(2400px, 100vw); }
+
+  /* ─── QTE Overlay ─── */
+  #qte {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(5,3,0,0.78); backdrop-filter: blur(8px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px;
+  }
+  #qte.hidden { display: none; }
+  #qte-title {
+    font-family: 'Bangers', sans-serif; letter-spacing: 5px; font-size: 56px;
+    color: #ff8c1a; text-shadow: 0 0 30px #ff8c1a, 0 0 60px #c41e3a;
+  }
+  #qte-subtitle { font-size: 13px; letter-spacing: 3px; color: #9e8e74; text-transform: uppercase; }
+
+  #mudras {
+    display: flex; gap: 16px; margin-top: 10px;
+  }
+  .mudra {
+    width: 100px; height: 140px;
+    border: 2px solid #ff8c1a;
+    background: rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    padding: 14px 6px 14px;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    position: relative;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+  .mudra .kanji { font-size: 42px; line-height: 1; color: #fff5e1; font-family: serif; font-weight: 700;
+                  text-shadow: 0 0 10px rgba(255,140,26,0.5); }
+  .mudra .name { font-size: 10px; color: #9e8e74; letter-spacing: 1px; margin-top: 6px; text-transform: uppercase; }
+  .mudra .key {
+    position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    background: #ff8c1a; color: #000;
+    font-weight: 900; font-size: 14px; padding: 3px 14px;
+    border-radius: 3px; letter-spacing: 1px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+  }
+  .mudra.current {
+    border-color: #ffd700;
+    box-shadow: 0 0 30px #ffd700, inset 0 0 20px rgba(255,215,0,0.2);
+    transform: scale(1.15);
+  }
+  .mudra.current .kanji { color: #ffd700; text-shadow: 0 0 20px #ffd700; }
+  .mudra.done { border-color: #2d8f3a; background: rgba(45,143,58,0.2); }
+  .mudra.done .kanji { color: #2d8f3a; }
+  .mudra.fail { border-color: #c41e3a; animation: shake 0.3s; }
+
+  @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-10px);} 75%{transform:translateX(10px);} }
+
+  #timer-bar {
+    width: 600px; max-width: 80vw; height: 8px;
+    background: rgba(0,0,0,0.6); border: 1px solid #ff8c1a;
+    overflow: hidden; clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  }
+  #timer-fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, #2d8f3a 0%, #ffd700 60%, #c41e3a 100%);
+    transition: width 0.1s linear;
+  }
+
+  /* ─── Unlocked HUD ─── */
+  #unlocked-hud {
+    position: fixed; top: 30px; left: 30px; z-index: 30;
+    background: rgba(0,0,0,0.6); border: 1px solid #ff8c1a;
+    padding: 12px 20px; font-size: 13px; letter-spacing: 2px;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    display: none;
+  }
+  #unlocked-hud.show { display: block; }
+  #unlocked-hud .title { color: #ff8c1a; font-family: 'Bangers', sans-serif; font-size: 22px; letter-spacing: 4px; }
+  #unlocked-hud .tip { color: #c4b89e; margin-top: 4px; font-size: 11px; }
+
+  #finish-btn {
+    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    background: #2d8f3a; color: #fff; border: 2px solid #2d8f3a;
+    padding: 14px 40px; font-family: 'Bangers', sans-serif; letter-spacing: 4px; font-size: 22px;
+    cursor: pointer; z-index: 30; display: none;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    box-shadow: 0 0 30px rgba(45,143,58,0.6);
+    transition: transform 0.2s;
+  }
+  #finish-btn.show { display: block; }
+  #finish-btn:hover { transform: translateX(-50%) scale(1.05); }
+
+  #flash {
+    position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 60;
+    transition: opacity 0.4s;
+  }
+
+  #combo-hud {
+    position: fixed; top: 30px; right: 30px; z-index: 30;
+    background: rgba(0,0,0,0.5); border: 1px solid #ffd700; padding: 8px 18px;
+    color: #ffd700; font-family: 'Bangers', sans-serif; letter-spacing: 2px; font-size: 18px;
+    display: none;
+  }
+  #combo-hud.show { display: block; }
+</style>
+</head>
+<body>
+
+<video id="v_src" autoplay playsinline></video>
+<canvas id="out"></canvas>
+<div class="darkness"></div>
+
+<video id="n" class="fx" src="../assets/naruto.mp4" muted autoplay loop playsinline></video>
+<video id="s" class="fx" src="../assets/sasuke.mp4" muted autoplay loop playsinline></video>
+
+<!-- QTE OVERLAY -->
+<div id="qte">
+  <div id="qte-title">SCEAUX NINJA</div>
+  <div id="qte-subtitle">Reproduis la séquence des mudras avant le temps imparti</div>
+  <div id="mudras"></div>
+  <div id="timer-bar"><div id="timer-fill"></div></div>
+  <div id="qte-subtitle" style="margin-top:6px">Appuie sur les touches dans l'ordre</div>
+</div>
+
+<!-- Unlocked indicators -->
+<div id="unlocked-hud">
+  <div class="title">JUTSU DÉBLOQUÉ</div>
+  <div class="tip">Ouvre la main gauche → Naruto · Ouvre la main droite → Sasuke</div>
+</div>
+<div id="combo-hud"></div>
+<button id="finish-btn">TERMINER ✦</button>
+<div id="flash"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  NARUTO JUTSU — QTE then free hand mode
+// ═══════════════════════════════════════════════════════════════
+
+// ─── SFX (Web Audio) ───
+let _ac = null;
+function ac(){ if(!_ac) _ac = new (window.AudioContext||window.webkitAudioContext)(); if(_ac.state==='suspended') _ac.resume(); return _ac; }
+function snd(f,type,d,v){ try{ const a=ac(),o=a.createOscillator(),g=a.createGain(); o.type=type;o.frequency.value=f; g.gain.setValueAtTime(v,a.currentTime); g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d); o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+d);}catch(e){} }
+function sndNoise(d,v,lo,hi){ try{ const a=ac(); const b=a.createBuffer(1,a.sampleRate*d,a.sampleRate); const dt=b.getChannelData(0); for(let i=0;i<dt.length;i++)dt[i]=(Math.random()*2-1)*(1-i/dt.length); const s=a.createBufferSource(); s.buffer=b; const f=a.createBiquadFilter(); f.type='bandpass'; f.frequency.setValueAtTime(lo,a.currentTime); f.frequency.exponentialRampToValueAtTime(hi,a.currentTime+d); const g=a.createGain(); g.gain.setValueAtTime(v,a.currentTime); g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d); s.connect(f);f.connect(g);g.connect(a.destination); s.start(); }catch(e){} }
+const SFX = {
+  mudra(i){ snd(330 + i*70, 'sine', 0.18, 0.14); snd(660 + i*70, 'triangle', 0.12, 0.06); },
+  fail(){ snd(140,'sawtooth',0.25,0.16); },
+  success(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>snd(f,'sine',0.3,0.13),i*90)); sndNoise(0.4,0.1,400,3000); },
+  clone(){ sndNoise(0.3,0.12,200,1800); snd(180,'square',0.18,0.1); },
+};
+
+const MUDRAS = [
+  { kanji: '寅', name: 'Tora',  key: 'T' },
+  { kanji: '辰', name: 'Tatsu', key: 'D' },
+  { kanji: '巳', name: 'Mi',    key: 'M' },
+  { kanji: '未', name: 'Hitsuji', key: 'H' },
+  { kanji: '酉', name: 'Tori',  key: 'O' },
+];
+
+let seq = []; // generated each round
+let seqIndex = 0;
+let qteActive = true;
+let qteTimer = 12; // seconds total
+let qteStart = performance.now();
+let qteAttempts = 0;
+
+const mudrasEl = document.getElementById('mudras');
+const timerFill = document.getElementById('timer-fill');
+const qteEl = document.getElementById('qte');
+const unlockedHud = document.getElementById('unlocked-hud');
+const finishBtn = document.getElementById('finish-btn');
+const comboHud = document.getElementById('combo-hud');
+
+function buildSeq(n = 5) {
+  seq = [];
+  for (let i = 0; i < n; i++) seq.push(MUDRAS[Math.floor(Math.random() * MUDRAS.length)]);
+  seqIndex = 0;
+  renderMudras();
+}
+
+function renderMudras() {
+  mudrasEl.innerHTML = '';
+  seq.forEach((m, i) => {
+    const d = document.createElement('div');
+    d.className = 'mudra';
+    if (i < seqIndex) d.classList.add('done');
+    if (i === seqIndex) d.classList.add('current');
+    d.innerHTML = `<div class="kanji">${m.kanji}</div><div class="name">${m.name}</div><div class="key">${m.key}</div>`;
+    mudrasEl.appendChild(d);
+  });
+}
+
+function failFlash(i) {
+  const node = mudrasEl.children[i];
+  if (node) { node.classList.add('fail'); setTimeout(() => node.classList.remove('fail'), 300); }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!qteActive) return;
+  const k = e.key.toUpperCase();
+  const expected = seq[seqIndex];
+  if (!expected) return;
+  if (k === expected.key) {
+    SFX.mudra(seqIndex);
+    seqIndex++;
+    renderMudras();
+    if (seqIndex >= seq.length) {
+      // Success!
+      SFX.success();
+      qteSuccess();
+    }
+  } else {
+    // wrong key
+    SFX.fail();
+    failFlash(seqIndex);
+    // reset sequence on bad key (punishing but fair)
+    seqIndex = 0;
+    renderMudras();
+  }
+});
+
+function qteSuccess() {
+  qteActive = false;
+  document.getElementById('flash').style.opacity = '0.95';
+  setTimeout(() => document.getElementById('flash').style.opacity = '0', 400);
+  qteEl.style.transition = 'opacity 0.6s'; qteEl.style.opacity = '0';
+  setTimeout(() => qteEl.classList.add('hidden'), 700);
+
+  unlockedHud.classList.add('show');
+  comboHud.classList.add('show');
+  finishBtn.classList.add('show');
+
+  // Start free mode
+  startCamera();
+}
+
+function qteFail() {
+  qteActive = false;
+  qteAttempts++;
+  // Try again with new sequence
+  setTimeout(() => {
+    qteActive = true;
+    qteStart = performance.now();
+    buildSeq(5);
+    document.getElementById('qte-title').textContent = 'RECOMMENCE !';
+  }, 1000);
+}
+
+function qteLoop() {
+  if (!qteActive) { requestAnimationFrame(qteLoop); return; }
+  const elapsed = (performance.now() - qteStart) / 1000;
+  const ratio = Math.max(0, 1 - elapsed / qteTimer);
+  timerFill.style.width = (ratio * 100) + '%';
+  if (ratio <= 0) qteFail();
+  requestAnimationFrame(qteLoop);
+}
+
+buildSeq(5);
+qteLoop();
+
+// ═══════════════════════════════════════════════════════════════
+//  FREE MODE — adapted from naruto-main (MediaPipe)
+// ═══════════════════════════════════════════════════════════════
+const vElement = document.getElementById('v_src');
+const cElement = document.getElementById('out');
+const ctx = cElement.getContext('2d');
+const nVid = document.getElementById('n');
+const sVid = document.getElementById('s');
+
+let pwr = [0, 0];
+let wasOpen = [false, false];
+let clonesSpawned = 0;
+let cameraStarted = false;
+
+function checkOpen(pts) {
+  let count = 0;
+  const wrist = pts[0];
+  const tips = [8, 12, 16, 20];
+  const pips = [6, 10, 14, 18];
+  for (let i = 0; i < tips.length; i++) {
+    const tip = pts[tips[i]], pip = pts[pips[i]];
+    if (Math.hypot(tip.x - wrist.x, tip.y - wrist.y) > Math.hypot(pip.x - wrist.x, pip.y - wrist.y)) count++;
+  }
+  return count >= 3;
+}
+
+function onResults(res) {
+  cElement.width = vElement.videoWidth;
+  cElement.height = vElement.videoHeight;
+  ctx.save();
+  ctx.clearRect(0, 0, cElement.width, cElement.height);
+
+  let fL = false, fR = false;
+  nVid.style.display = 'none';
+  sVid.style.display = 'none';
+
+  if (res.multiHandLandmarks && res.multiHandedness) {
+    res.multiHandLandmarks.forEach((pts, i) => {
+      const label = res.multiHandedness[i].label;
+      const isR = label === 'Right';
+      const idx = isR ? 1 : 0;
+
+      // Glowing skeleton (dessin manuel — pts normalisés × taille canvas)
+      ctx.save();
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = isR ? '#c41e3a' : '#ff8c1a';
+      ctx.strokeStyle = isR ? '#ff5050' : '#ffd700'; ctx.lineWidth = 3;
+      for (const [a, b] of HAND_CONNECTIONS) {
+        ctx.beginPath();
+        ctx.moveTo(pts[a].x * cElement.width, pts[a].y * cElement.height);
+        ctx.lineTo(pts[b].x * cElement.width, pts[b].y * cElement.height);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#ffffff';
+      for (const k of pts) { ctx.beginPath(); ctx.arc(k.x * cElement.width, k.y * cElement.height, 2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+
+      const open = checkOpen(pts);
+      pwr[idx] += open ? 0.05 : -0.15;
+      pwr[idx] = Math.max(0, Math.min(1, pwr[idx]));
+
+      if (open && !wasOpen[idx]) {
+        const vid = isR ? sVid : nVid;
+        vid.currentTime = 0;
+        vid.play();
+        clonesSpawned++;
+        SFX.clone();
+        updateCombo();
+      }
+      wasOpen[idx] = open;
+
+      const wrist = pts[0], knk = pts[9];
+      if (pwr[idx] > 0.01) {
+        if (isR) {
+          fR = true;
+          const tx = (wrist.x + knk.x) / 2;
+          const ty = (wrist.y + knk.y) / 2;
+          sVid.style.left = `${(1 - tx) * window.innerWidth}px`;
+          sVid.style.top = `${ty * window.innerHeight}px`;
+          sVid.style.display = 'block';
+          sVid.style.opacity = pwr[idx];
+        } else {
+          fL = true;
+          const dx = knk.x - wrist.x;
+          const dy = knk.y - wrist.y;
+          const tx = knk.x + (dx * 0.8);
+          const ty = knk.y + (dy * 0.8);
+          nVid.style.left = `${(1 - tx) * window.innerWidth}px`;
+          nVid.style.top = `${(ty * window.innerHeight) - 120}px`;
+          nVid.style.display = 'block';
+          nVid.style.opacity = pwr[idx];
+        }
+      }
+    });
+  }
+
+  if (!fL) {
+    pwr[0] = Math.max(0, pwr[0] - 0.15);
+    if (pwr[0] > 0.01) { nVid.style.display = 'block'; nVid.style.opacity = pwr[0]; }
+    wasOpen[0] = false;
+  }
+  if (!fR) {
+    pwr[1] = Math.max(0, pwr[1] - 0.15);
+    if (pwr[1] > 0.01) { sVid.style.display = 'block'; sVid.style.opacity = pwr[1]; }
+    wasOpen[1] = false;
+  }
+  ctx.restore();
+}
+
+function updateCombo() {
+  comboHud.textContent = `KAGE BUNSHIN × ${clonesSpawned}`;
+  // Show finish after first invocation
+  if (clonesSpawned >= 3) {
+    finishBtn.textContent = 'TERMINER ✦ (jutsu maîtrisé)';
+  }
+}
+
+async function getSharedStream() {
+  if (window.__mangaStream && window.__mangaStream.active) return window.__mangaStream;
+  try { const P = window.parent; if (P && P.__mangaStream && P.__mangaStream.active) return P.__mangaStream; } catch(e){}
+  return await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: true });
+}
+// Connexions du modèle main + adaptateur ml5 → format MediaPipe
+const HAND_CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function gotHandsML5(results) {
+  const vw = vElement.videoWidth || 640, vh = vElement.videoHeight || 480;
+  const multiHandLandmarks = [], multiHandedness = [];
+  for (const h of (results || [])) {
+    multiHandLandmarks.push(h.keypoints.map(k => ({ x: k.x / vw, y: k.y / vh, z: 0 })));
+    multiHandedness.push({ label: h.handedness || 'Left' });
+  }
+  onResults({ multiHandLandmarks, multiHandedness });
+}
+async function startCamera() {
+  if (cameraStarted) return; cameraStarted = true;
+  try {
+    const stream = await getSharedStream();
+    vElement.srcObject = new MediaStream(stream.getVideoTracks());
+    await vElement.play();
+    const handPose = ml5.handPose({ maxHands: 2, runtime: 'mediapipe', flipped: false }, () => {
+      handPose.detectStart(vElement, gotHandsML5);
+    });
+  } catch(e) { console.warn('cam', e); }
+}
+
+finishBtn.onclick = () => {
+  try { window.parent.postMessage({ type: 'interaction-complete', id: 'naruto' }, '*'); } catch (e) {}
+};
+</script>
+<script src="mouse-fallback.js"></script>
+</body>
+</html>

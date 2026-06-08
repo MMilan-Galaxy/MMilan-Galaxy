@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Demon Slayer — Souffle de l'Eau</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
+  body { background:#06120f; overflow:hidden; height:100vh; font-family:'Inter',sans-serif; color:#dff; }
+  #cam { position:absolute; inset:0; width:100vw; height:100vh; object-fit:cover; transform:scaleX(-1); opacity:0.55; }
+  #cv { position:absolute; inset:0; }
+  #hud { position:fixed; top:0; left:0; right:0; padding:28px 40px; display:flex; justify-content:space-between; z-index:5; pointer-events:none; }
+  #title { font-family:'Bangers',sans-serif; font-size:34px; letter-spacing:4px; color:#3bd6ff; text-shadow:0 0 24px #1a8fd6; }
+  #title small { display:block; font-family:'Inter'; font-weight:400; font-size:12px; color:#9fd; letter-spacing:2px; margin-top:4px; }
+  #right { text-align:right; display:flex; flex-direction:column; gap:6px; }
+  #combo { font-family:'Bangers',sans-serif; font-size:24px; letter-spacing:2px; color:#3bd6ff; }
+  #lives { display:flex; gap:6px; justify-content:flex-end; }
+  .life { width:14px; height:14px; border-radius:50%; background:#3bd6ff; box-shadow:0 0 10px #3bd6ff; }
+  .life.lost { background:rgba(255,255,255,0.12); box-shadow:none; }
+  #kills { font-size:12px; letter-spacing:2px; color:#9fd; }
+  #finish-btn, #startBtn { background:#1a8fd6; color:#fff; border:2px solid #3bd6ff; padding:14px 40px; font-family:'Bangers',sans-serif; letter-spacing:3px; font-size:20px; cursor:pointer; z-index:20; clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px); }
+  #finish-btn { position:fixed; bottom:40px; left:50%; transform:translateX(-50%); display:none; box-shadow:0 0 30px #3bd6ff; }
+  #finish-btn.show { display:block; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 30px #3bd6ff;} 50%{box-shadow:0 0 60px #fff;} }
+  #prompt { position:fixed; inset:0; background:rgba(4,14,12,0.95); z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:20px; }
+  #prompt h2 { font-family:'Bangers',sans-serif; font-size:44px; color:#3bd6ff; letter-spacing:3px; }
+  #prompt p { color:#9fd; max-width:540px; line-height:1.6; }
+  #err { color:#ff6b6b; font-size:13px; min-height:18px; }
+  #banner { position:fixed; top:30%; left:50%; transform:translate(-50%,-50%); font-family:serif; font-weight:900; font-size:64px; color:rgba(59,214,255,0.18); letter-spacing:8px; z-index:3; pointer-events:none; }
+</style>
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<canvas id="cv"></canvas>
+<div id="banner">全集中・水ノ呼吸</div>
+
+<div id="hud">
+  <div id="title">SOUFFLE DE L'EAU<small>Tranche chaque démon d'un geste vif dans la direction de la flèche</small></div>
+  <div id="right">
+    <div id="combo">COMBO ×0</div>
+    <div id="lives"><div class="life"></div><div class="life"></div><div class="life"></div></div>
+    <div id="kills">0 / 12 démons</div>
+  </div>
+</div>
+
+<button id="finish-btn">TERMINER ✦</button>
+
+<div id="prompt">
+  <h2>水の呼吸 — SOUFFLE DE L'EAU</h2>
+  <p>Des démons surgissent de la forêt de bambous. Chacun affiche une <strong>flèche</strong> : balaie ta main <strong>rapidement</strong> dans cette direction, face à la caméra, pour le trancher. Survis et abats <strong>6 démons</strong> !</p>
+  <button id="startBtn">DÉGAINER LE KATANA</button>
+  <div id="err"></div>
+</div>
+
+<script>
+const cam = document.getElementById('cam');
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+let hands = null, started = false, finished = false, frame = 0;
+let palm = null, prevPalm = null, palmTrail = [];
+let lastSlashAt = 0;
+let combo = 0, lives = 3, kills = 0;
+let demons = [], slashes = [], lastSpawn = 0;
+const TARGET = 12, MAX_ALIVE = 3;
+
+// ─── SFX ───
+let _ac=null; function ac(){ if(!_ac)_ac=new(window.AudioContext||window.webkitAudioContext)(); if(_ac.state==='suspended')_ac.resume(); return _ac; }
+function snd(f,t,d,v){ try{const a=ac(),o=a.createOscillator(),g=a.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+d);}catch(e){} }
+function noise(d,v,lo,hi){ try{const a=ac();const b=a.createBuffer(1,a.sampleRate*d,a.sampleRate);const dt=b.getChannelData(0);for(let i=0;i<dt.length;i++)dt[i]=(Math.random()*2-1)*(1-i/dt.length);const s=a.createBufferSource();s.buffer=b;const f=a.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(lo,a.currentTime);f.frequency.exponentialRampToValueAtTime(hi,a.currentTime+d);const g=a.createGain();g.gain.setValueAtTime(v,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d);s.connect(f);f.connect(g);g.connect(a.destination);s.start();}catch(e){} }
+const SFX = {
+  slash(){ noise(0.3,0.13,800,4000); snd(520,'sine',0.12,0.06); },
+  slain(){ snd(660,'sine',0.2,0.12); snd(990,'triangle',0.25,0.07); noise(0.2,0.08,1200,4000); },
+  spawn(){ snd(110,'sawtooth',0.25,0.1); },
+  miss(){ snd(160,'square',0.1,0.07); },
+  hurt(){ snd(90,'sawtooth',0.4,0.16); noise(0.3,0.1,100,400); },
+  victory(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>snd(f,'sine',0.3,0.13),i*100)); },
+};
+
+const DIRS = [
+  { a: 0,            sym:'→' },
+  { a: Math.PI,      sym:'←' },
+  { a: -Math.PI/2,   sym:'↑' },
+  { a: Math.PI/2,    sym:'↓' },
+];
+
+function resize(){ cv.width=innerWidth; cv.height=innerHeight; }
+addEventListener('resize', resize); resize();
+
+function onHands(res) {
+  if (res.multiHandLandmarks && res.multiHandLandmarks.length) {
+    const lm = res.multiHandLandmarks[0]; hands = lm;
+    const idx = [0,5,9,13,17]; let sx=0, sy=0;
+    for (const i of idx){ sx += (1-lm[i].x); sy += lm[i].y; }
+    palm = { x: sx/idx.length * cv.width, y: sy/idx.length * cv.height };
+  } else { hands = null; palm = null; }
+}
+
+function spawnDemon() {
+  const dir = DIRS[Math.floor(Math.random()*DIRS.length)];
+  // ttl shrinks slightly as you progress for rising tension, but stays fair
+  const ttl = Math.max(3200, 4600 - kills * 110);
+  demons.push({
+    x: 0.18 + Math.random()*0.64, y: 0.3 + Math.random()*0.4,
+    dir, life: 1, born: performance.now(), ttl, dead:false, deathT:0, scale: 0,
+  });
+  SFX.spawn();
+}
+
+function update() {
+  const now = performance.now();
+  // palm velocity → slash
+  if (palm) {
+    palmTrail.push({ x: palm.x, y: palm.y, life: 1 });
+    if (palmTrail.length > 14) palmTrail.shift();
+    if (prevPalm) {
+      const vx = palm.x - prevPalm.x, vy = palm.y - prevPalm.y;
+      const speed = Math.hypot(vx, vy);
+      if (speed > 34 && now - lastSlashAt > 260) {
+        lastSlashAt = now;
+        registerSlash(Math.atan2(vy, vx), palm.x, palm.y, speed);
+      }
+    }
+    prevPalm = { x: palm.x, y: palm.y };
+  }
+
+  // spawn
+  if (started && !finished && now - lastSpawn > 1300 && demons.filter(d=>!d.dead).length < MAX_ALIVE && kills + demons.filter(d=>!d.dead).length < TARGET) {
+    lastSpawn = now; spawnDemon();
+  }
+  // demon lifetimes & grow
+  for (const d of demons) {
+    if (d.scale < 1) d.scale = Math.min(1, d.scale + 0.08);
+    if (!d.dead && now - d.born > d.ttl) { d.dead = true; d.escaped = true; d.deathT = 0; loseLife(); }
+    if (d.dead) d.deathT += 0.05;
+  }
+  demons = demons.filter(d => !(d.dead && d.deathT > 1));
+  // slashes age
+  for (const s of slashes) s.t += 0.06;
+  slashes = slashes.filter(s => s.t < 1);
+}
+
+function angDiff(a,b){ let d = Math.abs(a-b)%(Math.PI*2); if (d>Math.PI) d = Math.PI*2-d; return d; }
+
+function registerSlash(angle, x, y, speed) {
+  slashes.push({ angle, x, y, t: 0, len: Math.min(cv.width, speed*8 + 300) });
+  SFX.slash();
+  // find a live demon whose required dir matches
+  let best = null, bestD = 0.7; // tolerance rad
+  for (const d of demons) {
+    if (d.dead) continue;
+    const diff = angDiff(angle, d.dir.a);
+    if (diff < bestD) { bestD = diff; best = d; }
+  }
+  if (best) {
+    best.dead = true; best.deathT = 0; best.slain = true;
+    combo++; kills++;
+    SFX.slain();
+    document.getElementById('combo').textContent = 'COMBO ×' + combo;
+    document.getElementById('kills').textContent = kills + ' / ' + TARGET + ' démons';
+    if (kills >= TARGET) win();
+  } else {
+    combo = 0; SFX.miss(); document.getElementById('combo').textContent = 'COMBO ×0';
+  }
+}
+
+function loseLife() {
+  lives--; combo = 0; SFX.hurt();
+  document.getElementById('combo').textContent = 'COMBO ×0';
+  document.querySelectorAll('.life').forEach((el,i)=> el.className = i < lives ? 'life' : 'life lost');
+  if (lives <= 0) { lives = 3; kills = Math.max(0, kills); document.querySelectorAll('.life').forEach(el=>el.className='life'); }
+}
+
+function win() { finished = true; SFX.victory(); document.getElementById('finish-btn').classList.add('show'); }
+
+function drawDemon(d) {
+  const x = d.x*cv.width, y = d.y*cv.height;
+  ctx.save(); ctx.translate(x,y);
+  if (d.dead) {
+    if (d.slain) {
+      // split in two
+      const off = d.deathT * 120;
+      ctx.globalAlpha = Math.max(0, 1-d.deathT);
+      drawDemonBody(-off*0.4, 0, 0.5, true);
+      drawDemonBody(off*0.4, 0, 0.5, false);
+      ctx.restore(); return;
+    } else { ctx.globalAlpha = Math.max(0, 1-d.deathT); }
+  }
+  ctx.scale(d.scale, d.scale);
+  drawDemonBody(0,0,1,null);
+  // direction arrow
+  ctx.save(); ctx.rotate(d.dir.a);
+  ctx.fillStyle = '#ffec5c'; ctx.shadowColor='#ffec5c'; ctx.shadowBlur=14;
+  ctx.font = 'bold 40px Inter'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.translate(0,0); ctx.rotate(-d.dir.a); // keep glyph upright-ish but place along dir
+  ctx.restore();
+  // arrow as triangle pointing dir, above head
+  ctx.save();
+  ctx.translate(Math.cos(d.dir.a)*54, Math.sin(d.dir.a)*54 - 60);
+  ctx.rotate(d.dir.a); ctx.fillStyle='#ffec5c'; ctx.shadowColor='#ffec5c'; ctx.shadowBlur=16;
+  ctx.beginPath(); ctx.moveTo(16,0); ctx.lineTo(-10,-12); ctx.lineTo(-10,12); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // ttl ring
+  const p = 1 - (performance.now()-d.born)/d.ttl;
+  ctx.strokeStyle = `rgba(255,90,90,${0.6})`; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(0,-70, 14, -Math.PI/2, -Math.PI/2 + p*Math.PI*2); ctx.stroke();
+  ctx.restore();
+}
+function drawDemonBody(ox, oy, sc, leftHalf) {
+  ctx.save(); ctx.translate(ox,oy); ctx.scale(sc,sc);
+  ctx.fillStyle = '#3a1530'; ctx.strokeStyle='#10070a'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.roundRect(-28,-20,56,80,10); ctx.fill(); ctx.stroke();
+  // head
+  ctx.fillStyle='#b86a8a'; ctx.beginPath(); ctx.ellipse(0,-42,22,24,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  // eyes
+  ctx.fillStyle='#ffec5c'; ctx.shadowColor='#ff5050'; ctx.shadowBlur=8;
+  ctx.beginPath(); ctx.arc(-8,-44,4,0,Math.PI*2); ctx.arc(8,-44,4,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+  // fangs
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.moveTo(-6,-34); ctx.lineTo(-2,-26); ctx.lineTo(-10,-30); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(6,-34); ctx.lineTo(2,-26); ctx.lineTo(10,-30); ctx.fill();
+  // demon markings
+  ctx.strokeStyle='#6a1030'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(-14,-52); ctx.lineTo(-6,-44); ctx.moveTo(14,-52); ctx.lineTo(6,-44); ctx.stroke();
+  ctx.restore();
+}
+
+function drawWaterSlash(s) {
+  const alpha = 1 - s.t;
+  ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.angle);
+  ctx.globalCompositeOperation = 'screen';
+  // multiple wave strokes
+  for (let k=0;k<4;k++){
+    ctx.strokeStyle = `rgba(${100-k*10},${200-k*10},255,${alpha*(0.7-k*0.12)})`;
+    ctx.lineWidth = (10 - k*2) * (1 + s.t);
+    ctx.shadowColor='#3bd6ff'; ctx.shadowBlur=18;
+    ctx.beginPath();
+    const L = s.len * (0.4 + s.t*0.8);
+    for (let x=-L/2; x<=L/2; x+=12){ const yy = Math.sin(x*0.05 + frame*0.3 + k)* (8+k*3); x===-L/2?ctx.moveTo(x,yy):ctx.lineTo(x,yy); }
+    ctx.stroke();
+  }
+  // droplets
+  for (let i=0;i<6;i++){ const dx=(Math.random()-0.5)*s.len, dy=(Math.random()-0.5)*40;
+    ctx.fillStyle=`rgba(180,230,255,${alpha*0.6})`; ctx.beginPath(); ctx.arc(dx,dy,2+Math.random()*2,0,Math.PI*2); ctx.fill(); }
+  ctx.restore();
+}
+
+function draw() {
+  frame++;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // teal night overlay
+  ctx.fillStyle='rgba(6,30,28,0.32)'; ctx.fillRect(0,0,cv.width,cv.height);
+
+  if (started) {
+    update();
+    for (const d of demons) drawDemon(d);
+    for (const s of slashes) drawWaterSlash(s);
+    // palm water trail
+    ctx.save(); ctx.globalCompositeOperation='screen';
+    for (let i=1;i<palmTrail.length;i++){ const a=palmTrail[i], b=palmTrail[i-1];
+      ctx.strokeStyle=`rgba(120,220,255,${i/palmTrail.length*0.6})`; ctx.lineWidth=i; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(a.x,a.y); ctx.stroke(); }
+    ctx.restore();
+    if (palm) { ctx.save(); ctx.shadowColor='#3bd6ff'; ctx.shadowBlur=16; ctx.fillStyle='#dff'; ctx.beginPath(); ctx.arc(palm.x,palm.y,8,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+    if (!palm) { ctx.fillStyle='rgba(255,107,107,0.9)'; ctx.font='bold 16px Inter'; ctx.textAlign='center'; ctx.fillText('✋ Montre ta main à la caméra', cv.width/2, cv.height-40); }
+  }
+  requestAnimationFrame(draw);
+}
+
+async function getSharedStream() {
+  try { const P = window.parent; if (P && P.__mangaStream && P.__mangaStream.active) return P.__mangaStream; } catch(e){}
+  return await navigator.mediaDevices.getUserMedia({ video:{width:640,height:480,facingMode:'user'}, audio:true });
+}
+(async () => {
+  const err = document.getElementById('err');
+  try {
+    const h = new Hands({ locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+    h.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.6, minTrackingConfidence:0.6 });
+    h.onResults(onHands);
+    const stream = await getSharedStream();
+    cam.srcObject = new MediaStream(stream.getVideoTracks());
+    await cam.play();
+    async function pump(){ if (cam.readyState>=2){ try{ await h.send({image:cam}); }catch(e){} } requestAnimationFrame(pump); }
+    pump();
+    document.getElementById('startBtn').textContent = 'DÉGAINER ▶';
+    document.getElementById('startBtn').disabled = false;
+  } catch(e){ err.textContent='Erreur caméra : '+(e.message||e); }
+})();
+document.getElementById('startBtn').onclick = () => { ac(); document.getElementById('prompt').style.display='none'; started=true; lastSpawn=performance.now(); };
+document.getElementById('finish-btn').onclick = () => { try { window.parent.postMessage({ type:'interaction-complete', id:'demonslayer' }, '*'); } catch(e){} };
+draw();
+</script>
+</body>
+</html>
